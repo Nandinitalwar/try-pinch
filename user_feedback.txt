@@ -1,0 +1,41 @@
+September 22, 2025
+
+USER FEEDBACK & FEATURE REQUESTS:
+
+1. Have the indian name of the star sign in brackets when the user is picking from the drop down menu
+
+2. Change the font everywhere to inter - the font that chatgpt uses 
+
+3. Change the name from AstroWorld to astrogpt all lowercase 
+
+4. The sparkle cursor follow thing 
+
+5. Use the info user provided and pass that into the query 
+
+6. Render charts to ascii code
+
+7. Suggested questions in the UI 
+
+8. City autocomplete the full
+
+9. Have the ui look like chat gpt with the collapsible toolbar 
+
+10. tell the ai to be concise 
+
+11. Use twilio API to inform the user
+
+12. Ping them between the hours of 8-10pm or whenever is right for that day 
+
+13. Whether they should text their ex or not
+
+14. Just constantly ping them btw 
+
+15. You are an astrologer. "User's question here" Be prescriptive and confident. People want extreme ideas and outcomes. They want you to be in control. "User's name, star sign, date of birth, time of birth, place of birth"  
+
+PERFORMANCE ISSUES:
+- Latency of deleting chats
+- Chats take too long to render on the left hand side 
+- The slow loading thing when the page opens has more rizz
+
+UI/UX IMPROVEMENTS:
+- No information on the landing page
