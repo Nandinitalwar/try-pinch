@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # Main application
+  astroworld:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NEXT_PUBLIC_BASE_URL=http://localhost:3000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - astroworld-network
+
+  # Redis for caching and rate limiting (optional)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - astroworld-network
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - astroworld
+    restart: unless-stopped
+    networks:
+      - astroworld-network
+
+  # PostgreSQL database (optional)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=astroworld
+      - POSTGRES_USER=astroworld
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-astroworld123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - astroworld-network
+
+volumes:
+  redis_data:
+  postgres_data:
+
+networks:
+  astroworld-network:
+    driver: bridge
