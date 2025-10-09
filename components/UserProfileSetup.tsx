@@ -31,6 +31,7 @@ export default function UserProfileSetup({ onClose }: UserProfileSetupProps = {}
   const [starSign, setStarSign] = useState(userProfile?.starSign || '')
   const [phoneNumber, setPhoneNumber] = useState(userProfile?.phoneNumber || '')
   const [smsNotifications, setSmsNotifications] = useState(userProfile?.smsNotifications || false)
+  const [smsConsent, setSmsConsent] = useState(false)
   
   // Location search states
   const [locationQuery, setLocationQuery] = useState(userProfile?.placeOfBirth || '')
@@ -108,14 +109,21 @@ export default function UserProfileSetup({ onClose }: UserProfileSetupProps = {}
       return
     }
 
+    // If SMS consent is checked, phone number is required
+    if (smsConsent && !phoneNumber) {
+      alert('Phone number is required when SMS notifications are enabled')
+      return
+    }
+
     const profile = {
       name,
       dateOfBirth,
       timeOfBirth,
       placeOfBirth,
       starSign,
-      phoneNumber,
-      smsNotifications,
+      phoneNumber: smsConsent ? phoneNumber : '', // Only save phone if consent given
+      smsNotifications: smsConsent, // SMS notifications enabled only if consent given
+      smsConsent, // Store consent status
       currentProblems: userProfile?.currentProblems || [],
       id: userProfile?.id || `profile_${Date.now()}`,
       createdAt: userProfile?.createdAt || new Date(),
@@ -273,34 +281,56 @@ export default function UserProfileSetup({ onClose }: UserProfileSetupProps = {}
         </select>
       </div>
 
-      {/* Phone Number */}
-      <div>
-        <label className="block text-sm font-medium text-white mb-2">
-          <Phone className="inline w-4 h-4 mr-2" />
-          Phone Number (Optional)
-        </label>
-        <input
-          type="tel"
-          value={phoneNumber}
-          onChange={(e) => setPhoneNumber(e.target.value)}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-          placeholder="+1 (555) 123-4567"
-        />
-        <p className="text-xs text-gray-400 mt-1">For SMS notifications about your predictions</p>
+      {/* SMS Consent Checkbox - Required for Twilio Verification */}
+      <div className="bg-gray-800 border border-gray-600 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <input
+            type="checkbox"
+            id="smsConsent"
+            checked={smsConsent}
+            onChange={(e) => setSmsConsent(e.target.checked)}
+            className="w-4 h-4 text-purple-600 bg-gray-700 border border-gray-500 rounded focus:ring-purple-500 focus:ring-2 mt-1"
+          />
+          <div className="flex-1">
+            <label htmlFor="smsConsent" className="text-sm text-white cursor-pointer">
+              I agree to receive recurring SMS notifications from <strong>AstroWorld</strong>. Message frequency varies. Msg & Data rates may apply. Text STOP to opt out, HELP for help.
+            </label>
+            <div className="mt-2 space-x-4">
+              <a 
+                href="/sms-terms" 
+                target="_blank" 
+                className="text-xs text-purple-400 hover:text-purple-300 underline"
+              >
+                SMS Terms
+              </a>
+              <a 
+                href="/privacy-policy" 
+                target="_blank" 
+                className="text-xs text-purple-400 hover:text-purple-300 underline"
+              >
+                Privacy Policy
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* SMS Notifications Toggle */}
-      {phoneNumber && (
+      {/* Phone Number - Only show if SMS consent is checked */}
+      {smsConsent && (
         <div>
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={smsNotifications}
-              onChange={(e) => setSmsNotifications(e.target.checked)}
-              className="w-4 h-4 text-purple-600 bg-gray-800 border border-gray-600 rounded focus:ring-purple-500 focus:ring-2"
-            />
-            <span className="text-sm text-white">Send me SMS notifications for important predictions</span>
+          <label className="block text-sm font-medium text-white mb-2">
+            <Phone className="inline w-4 h-4 mr-2" />
+            Phone Number *
           </label>
+          <input
+            type="tel"
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            placeholder="+1 (555) 123-4567"
+            required={smsConsent}
+          />
+          <p className="text-xs text-gray-400 mt-1">Required for SMS notifications about your predictions</p>
         </div>
       )}
 
