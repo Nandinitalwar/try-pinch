@@ -100,8 +100,8 @@ export default function PrivacyPolicy() {
                 If you have any questions about this Privacy Policy, please contact us at:
               </p>
               <div className="mt-3 ml-4">
-                <p>Email: support@astroworld.com</p>
-                <p>Address: [Your Business Address]</p>
+                <p>Email: nandinitalwar11@gmail.com</p>
+                <p>Address: 237 Vista De Sierra, Los Gatos, CA 95030</p>
               </div>
             </section>
           </div>
