@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
   console.log('Request headers:', Object.fromEntries(request.headers.entries()))
   
   try {
+    
     const body = await request.json()
     console.log('=== SMS API REQUEST BODY ===')
     console.log('Full request body:', JSON.stringify(body, null, 2))
@@ -40,8 +41,9 @@ export async function POST(request: NextRequest) {
     
     switch (type) {
       case 'prediction':
+      case 'conversation':
         formattedMessage = smsService.formatPredictionMessage(userName || 'Friend', message)
-        console.log('Using prediction message format')
+        console.log('Using conversation message format')
         break
       case 'reminder':
         formattedMessage = smsService.formatReminderMessage(userName || 'Friend', message)

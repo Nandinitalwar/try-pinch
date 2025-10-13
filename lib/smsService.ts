@@ -1,12 +1,23 @@
 import twilio from 'twilio'
 
-// Initialize Twilio client
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+// Initialize Twilio client only if credentials are provided
+let client: ReturnType<typeof twilio> | null = null
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+}
 
 export interface SMSMessage {
   to: string
   message: string
-  type: 'prediction' | 'reminder' | 'horoscope'
+  type: 'prediction' | 'reminder' | 'horoscope' | 'conversation'
+}
+
+export interface UserProfile {
+  name?: string
+  starSign?: string
+  dateOfBirth?: string
+  timeOfBirth?: string
+  placeOfBirth?: string
 }
 
 export class SMSService {
@@ -45,7 +56,7 @@ export class SMSService {
       console.log('TWILIO_PHONE_NUMBER exists:', !!this.fromNumber)
       console.log('From number:', this.fromNumber)
       
-      if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !this.fromNumber) {
+      if (!client || !process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !this.fromNumber) {
         console.log('❌ SMS not sent: Twilio not configured')
         return false
       }
@@ -102,15 +113,22 @@ export class SMSService {
   }
 
   private isValidPhoneNumber(phoneNumber: string): boolean {
+    // Handle WhatsApp numbers (format: "whatsapp:+1234567890")
+    if (phoneNumber.startsWith('whatsapp:')) {
+      const actualNumber = phoneNumber.replace('whatsapp:', '')
+      const phoneRegex = /^\+[1-9]\d{1,14}$/
+      return phoneRegex.test(actualNumber)
+    }
+    
     // Basic phone number validation (E.164 format)
     const phoneRegex = /^\+[1-9]\d{1,14}$/
     return phoneRegex.test(phoneNumber)
   }
 
-  // Format prediction message for SMS
+  // Format prediction message for SMS - optimized for text conversations
   formatPredictionMessage(userName: string, prediction: string): string {
-    // Send very short test message
-    return `Test SMS`
+    // Return the AI response directly - it's already SMS-optimized
+    return prediction
   }
 
   // Format reminder message for SMS
