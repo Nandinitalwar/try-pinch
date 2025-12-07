@@ -221,16 +221,35 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
     ]
 
     // Single call to OpenAI without tools
+    console.log('\n' + '='.repeat(80))
+    console.log('📤 OPENROUTER API REQUEST')
+    console.log('='.repeat(80))
+    console.log('Model: openai/gpt-4o-mini')
+    console.log('Message count:', messages.length)
+    console.log('Max tokens:', MAX_TOKENS_PER_REQUEST)
+    console.log('Temperature:', 1)
+    console.log('Request timestamp:', new Date().toISOString())
     addLog('info', 'Calling OpenRouter API', { messageCount: messages.length })
+    
     const completion = await retryOpenAICall(async () => {
-      return await openai.chat.completions.create({
+      console.log('🔄 Sending request to OpenRouter...')
+      const startTime = Date.now()
+      const result = await openai.chat.completions.create({
         model: 'openai/gpt-4o-mini', // Using OpenAI GPT-4o-mini via OpenRouter
         messages,
         max_tokens: MAX_TOKENS_PER_REQUEST,
         temperature: 1,
       })
+      const duration = Date.now() - startTime
+      console.log(`✅ OpenRouter response received (${duration}ms)`)
+      return result
     })
 
+    console.log('\n📥 OPENROUTER API RESPONSE')
+    console.log('='.repeat(80))
+    console.log('Finish reason:', completion.choices[0]?.finish_reason)
+    console.log('Usage:', JSON.stringify(completion.usage, null, 2))
+    console.log('Choices count:', completion.choices?.length || 0)
     addLog('info', 'OpenAI API call successful', { 
       finish_reason: completion.choices[0]?.finish_reason,
       tokens: completion.usage
@@ -240,15 +259,41 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
     const response = assistantMessage?.content
 
     if (!response) {
+      console.log('\n❌ NO RESPONSE RECEIVED FROM OPENROUTER')
+      console.log('='.repeat(80))
+      console.log('Completion object:', JSON.stringify(completion, null, 2))
+      console.log('Assistant message:', assistantMessage)
+      console.log('Choices:', completion.choices)
       addLog('error', 'FATAL ERROR: No response content from OpenAI')
       throw new Error('No response from OpenAI')
     }
+
+    console.log('\n✅ RESPONSE CONTENT RECEIVED')
+    console.log('='.repeat(80))
+    console.log('Response length:', response.length)
+    console.log('Response preview:', response.substring(0, 200))
+    console.log('='.repeat(80) + '\n')
 
     addLog('info', 'AI response generated', { length: response.length, preview: response.substring(0, 100) })
     const jsonResponse = NextResponse.json({ response })
     return addSecurityHeaders(jsonResponse)
 
   } catch (error) {
+    console.log('\n❌ CHAT API ERROR')
+    console.log('='.repeat(80))
+    console.log('Error type:', error instanceof Error ? error.constructor.name : typeof error)
+    console.log('Error message:', error instanceof Error ? error.message : String(error))
+    if (error instanceof Error && error.stack) {
+      console.log('Stack trace:', error.stack)
+    }
+    if (error instanceof OpenAI.APIError) {
+      console.log('OpenRouter API Error Details:')
+      console.log('  Status:', error.status)
+      console.log('  Code:', error.code)
+      console.log('  Type:', error.type)
+      console.log('  Param:', error.param)
+    }
+    console.log('='.repeat(80) + '\n')
     addLog('error', 'ERROR in chat API', {
       type: error instanceof Error ? error.constructor.name : typeof error,
       message: error instanceof Error ? error.message : String(error),

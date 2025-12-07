@@ -183,8 +183,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Call the chat API to get AI response
+    console.log('\n📞 CALLING CHAT API')
+    console.log('='.repeat(80))
+    const chatApiUrl = `${request.url.split('/api/webhook')[0]}/api/chat`
+    console.log('Chat API URL:', chatApiUrl)
+    console.log('Message:', messageBody)
+    console.log('History length:', history.length)
+    console.log('Has user profile:', !!userState.userProfile)
     addLog('debug', 'Calling chat API', { hasUserProfile: !!userState.userProfile })
-    const chatResponse = await fetch(`${request.url.split('/api/webhook')[0]}/api/chat`, {
+    
+    const chatRequestStart = Date.now()
+    const chatResponse = await fetch(chatApiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -196,16 +205,39 @@ export async function POST(request: NextRequest) {
         userProfile: userState.userProfile
       })
     })
+    const chatRequestDuration = Date.now() - chatRequestStart
+
+    console.log('Chat API response status:', chatResponse.status)
+    console.log('Chat API response time:', chatRequestDuration + 'ms')
 
     if (!chatResponse.ok) {
       const errorText = await chatResponse.text()
+      console.log('\n❌ CHAT API ERROR RESPONSE')
+      console.log('='.repeat(80))
+      console.log('Status:', chatResponse.status)
+      console.log('Error text:', errorText)
+      console.log('='.repeat(80) + '\n')
       addLog('error', 'Chat API error', { status: chatResponse.status, error: errorText })
       throw new Error(`Chat API error: ${chatResponse.status}`)
     }
 
     const chatData = await chatResponse.json()
     const aiResponse = chatData.response
-    console.log('🤖 AI Response:', aiResponse)
+    
+    if (!aiResponse) {
+      console.log('\n❌ NO RESPONSE FROM CHAT API')
+      console.log('='.repeat(80))
+      console.log('Chat data received:', JSON.stringify(chatData, null, 2))
+      console.log('Response object:', chatData)
+      console.log('='.repeat(80) + '\n')
+      throw new Error('No response from chat API')
+    }
+    
+    console.log('\n✅ AI RESPONSE RECEIVED')
+    console.log('='.repeat(80))
+    console.log('Response length:', aiResponse.length)
+    console.log('Response:', aiResponse)
+    console.log('='.repeat(80) + '\n')
     addLog('info', 'AI response received', { length: aiResponse?.length || 0 })
 
     // Save AI response to Supabase
