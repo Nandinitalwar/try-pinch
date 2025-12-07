@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { UserProfileService } from '@/lib/supabase'
+import { ChatStorage } from '@/lib/chatStorage'
 import { addLog } from '@/lib/logger'
 
 // Verify that the request came from Twilio
@@ -36,14 +37,19 @@ const conversationState = new Map<string, {
 }>()
 
 export async function POST(request: NextRequest) {
-  console.log('🔔 === TWILIO WEBHOOK RECEIVED ===')
-  addLog('info', '=== TWILIO WEBHOOK RECEIVED ===')
+  const timestamp = new Date().toISOString()
+  console.log('\n' + '='.repeat(80))
+  console.log('🔔 TWILIO WEBHOOK RECEIVED', timestamp)
+  console.log('='.repeat(80))
+  addLog('info', '=== TWILIO WEBHOOK RECEIVED ===', { timestamp })
   
   try {
     // Parse the Twilio webhook data
     const body = await request.text()
-    console.log('📥 Raw webhook body:', body)
-    addLog('debug', 'Raw webhook body received', { bodyLength: body.length })
+    console.log('\n📥 RAW WEBHOOK BODY:')
+    console.log(body)
+    console.log('\n📊 PARSED WEBHOOK DATA:')
+    addLog('debug', 'Raw webhook body received', { bodyLength: body.length, body: body.substring(0, 200) })
     
     // Validate the request came from Twilio (optional but recommended)
     if (process.env.NODE_ENV === 'production') {
@@ -58,21 +64,28 @@ export async function POST(request: NextRequest) {
     const fromNumber = params.get('From')
     const messageBody = params.get('Body')
     const toNumber = params.get('To')
+    const messageSid = params.get('MessageSid')
+    const accountSid = params.get('AccountSid')
     
     // Check if this is a WhatsApp message
     const isWhatsApp = fromNumber?.startsWith('whatsapp:')
     
-    console.log('📱 === INCOMING MESSAGE ===')
     console.log('From:', fromNumber)
     console.log('To:', toNumber)
-    console.log('Message:', messageBody)
+    console.log('MessageSid:', messageSid)
+    console.log('AccountSid:', accountSid)
+    console.log('Message Body:', messageBody)
     console.log('Is WhatsApp:', isWhatsApp)
+    console.log('All Params:', Object.fromEntries(params.entries()))
     
-    addLog('info', 'Incoming message', { 
+    addLog('info', 'Incoming message details', { 
       from: fromNumber, 
       to: toNumber,
-      messagePreview: messageBody?.substring(0, 50),
-      isWhatsApp 
+      messageSid,
+      accountSid,
+      messageBody: messageBody?.substring(0, 100),
+      isWhatsApp,
+      timestamp: new Date().toISOString()
     })
     
     if (!fromNumber || !messageBody) {
@@ -80,18 +93,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Get or create conversation state for this user
+    // Load conversation history from Supabase
+    console.log('💾 Loading conversation history from Supabase...')
+    const conversationHistory = await ChatStorage.getConversationHistory(fromNumber, 10)
+    addLog('info', 'Loaded conversation history from Supabase', { messageCount: conversationHistory.length })
+    
+    // Convert to OpenAI format
+    const history = ChatStorage.formatForOpenAI(conversationHistory)
+    
+    // Get or create conversation state for this user (keep for in-memory profile)
     let userState = conversationState.get(fromNumber)
     if (!userState) {
       userState = { history: [] }
       conversationState.set(fromNumber, userState)
-      console.log('🆕 Created new conversation for:', fromNumber)
-      addLog('info', 'Created new conversation', { phone: fromNumber })
+      console.log('🆕 Created new in-memory state for:', fromNumber)
     }
-
-    // Add user message to history
-    userState.history.push({ role: 'user', content: messageBody })
-    addLog('debug', 'Added message to history', { totalMessages: userState.history.length })
+    
+    // Save user message to Supabase
+    console.log('\n💾 SAVING USER MESSAGE TO SUPABASE...')
+    console.log('Phone:', fromNumber)
+    console.log('Message:', messageBody)
+    const savedUserMessage = await ChatStorage.saveMessage(fromNumber, 'user', messageBody)
+    if (savedUserMessage) {
+      console.log('✅ User message saved to Supabase')
+      console.log('Message ID:', savedUserMessage.id)
+      console.log('Session ID:', savedUserMessage.session_id)
+      addLog('info', '✅ User message saved to Supabase', { 
+        messageId: savedUserMessage.id,
+        sessionId: savedUserMessage.session_id,
+        phone: fromNumber
+      })
+    } else {
+      console.log('❌ FAILED to save user message to Supabase')
+      console.error('ChatStorage.saveMessage returned null')
+      addLog('error', 'Failed to save user message to Supabase', { phone: fromNumber })
+    }
+    
+    // Add user message to history for API call
+    history.push({ role: 'user', content: messageBody })
 
     // Extract and store user profile information if present
     const birthDetails = UserProfileService.extractBirthDetails(messageBody)
@@ -110,14 +149,26 @@ export async function POST(request: NextRequest) {
       }
       
       // Save to Supabase
+      console.log('\n💾 SAVING USER PROFILE TO SUPABASE...')
+      console.log('Profile data:', JSON.stringify(updatedProfile, null, 2))
       const savedProfile = await UserProfileService.upsertProfile(updatedProfile)
       if (savedProfile) {
-        console.log('✅ User profile saved to Supabase:', savedProfile.id)
-        addLog('info', '✅ User profile saved to Supabase', { id: savedProfile.id, phone: fromNumber })
+        console.log('✅ USER PROFILE SAVED TO SUPABASE')
+        console.log('Profile ID:', savedProfile.id)
+        console.log('Phone:', savedProfile.phone_number)
+        console.log('Name:', savedProfile.name)
+        console.log('DOB:', savedProfile.date_of_birth)
+        addLog('info', '✅ User profile saved to Supabase', { 
+          id: savedProfile.id, 
+          phone: fromNumber,
+          name: savedProfile.name,
+          dob: savedProfile.date_of_birth
+        })
         userState.userProfile = savedProfile
       } else {
-        console.log('❌ Failed to save user profile to Supabase')
-        addLog('error', '❌ Failed to save user profile to Supabase')
+        console.log('❌ FAILED TO SAVE USER PROFILE')
+        console.error('UserProfileService.upsertProfile returned null')
+        addLog('error', '❌ Failed to save user profile to Supabase', { phone: fromNumber })
       }
     } else {
       // Try to load existing profile from Supabase if we don't have it in memory
@@ -140,7 +191,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         message: messageBody,
-        history: userState.history,
+        history: history, // Using Supabase history instead of in-memory
         phoneNumber: fromNumber,
         userProfile: userState.userProfile
       })
@@ -157,16 +208,23 @@ export async function POST(request: NextRequest) {
     console.log('🤖 AI Response:', aiResponse)
     addLog('info', 'AI response received', { length: aiResponse?.length || 0 })
 
-    // Add AI response to history
-    userState.history.push({ role: 'assistant', content: aiResponse })
-
-    // Limit conversation history to last 10 messages to avoid context overflow
-    if (userState.history.length > 10) {
-      userState.history = userState.history.slice(-10)
+    // Save AI response to Supabase
+    console.log('\n💾 SAVING AI RESPONSE TO SUPABASE...')
+    const savedAiMessage = await ChatStorage.saveMessage(fromNumber, 'assistant', aiResponse)
+    if (savedAiMessage) {
+      console.log('✅ AI response saved to Supabase')
+      console.log('Message ID:', savedAiMessage.id)
+      addLog('info', '✅ AI response saved to Supabase', { messageId: savedAiMessage.id })
+    } else {
+      console.log('❌ FAILED to save AI response')
+      addLog('error', 'Failed to save AI response to Supabase')
     }
 
     // Send response back using TwiML
-    console.log(`📤 Sending ${isWhatsApp ? 'WhatsApp' : 'SMS'} response`)
+    console.log('\n📤 SENDING RESPONSE TO TWILIO')
+    console.log('Type:', isWhatsApp ? 'WhatsApp' : 'SMS')
+    console.log('To:', fromNumber)
+    console.log('Response Length:', aiResponse?.length || 0)
     console.log('Response:', aiResponse)
     addLog('info', `Sending ${isWhatsApp ? 'WhatsApp' : 'SMS'} response`, { 
       messagePreview: aiResponse?.substring(0, 50) 
@@ -178,7 +236,11 @@ export async function POST(request: NextRequest) {
   <Message>${aiResponse}</Message>
 </Response>`
     
-    console.log('✅ Webhook complete!')
+    console.log('\n✅ WEBHOOK COMPLETE!')
+    console.log('TwiML Response:')
+    console.log(twimlResponse)
+    console.log('='.repeat(80) + '\n')
+    
     return new NextResponse(twimlResponse, {
       status: 200,
       headers: {
@@ -187,6 +249,12 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
+    console.log('\n❌ WEBHOOK ERROR!')
+    console.error('Error Type:', error instanceof Error ? error.constructor.name : typeof error)
+    console.error('Error Message:', error instanceof Error ? error.message : String(error))
+    console.error('Error Stack:', error instanceof Error ? error.stack : 'No stack trace')
+    console.log('='.repeat(80) + '\n')
+    
     addLog('error', 'WEBHOOK ERROR', {
       type: error instanceof Error ? error.constructor.name : typeof error,
       message: error instanceof Error ? error.message : String(error),

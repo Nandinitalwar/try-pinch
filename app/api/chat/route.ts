@@ -43,14 +43,15 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   return response
 }
 
-// Initialize OpenAI client with retry logic and explicit configuration
+// Initialize OpenRouter client (compatible with OpenAI SDK)
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENROUTER_API_KEY,
   maxRetries: 3,
   timeout: 30000, // 30 second timeout
-  baseURL: 'https://api.openai.com/v1', // Explicit base URL
+  baseURL: 'https://openrouter.ai/api/v1',
   defaultHeaders: {
-    'User-Agent': 'AstroWorld-AI-Astrologer/1.0.0',
+    'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://aiastrologer.vercel.app',
+    'X-Title': 'AI Astrologer SMS Bot'
   },
 })
 
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
   addLog('debug', 'Environment check', {
     NODE_ENV: process.env.NODE_ENV,
     PRODUCTION_MODE,
-    OPENAI_API_KEY_exists: !!process.env.OPENAI_API_KEY
+    OPENROUTER_API_KEY_exists: !!process.env.OPENROUTER_API_KEY
   })
   
   try {
@@ -143,9 +144,9 @@ export async function POST(request: NextRequest) {
       return addSecurityHeaders(response)
     }
 
-    // Check if OpenAI API key is available
-    if (!process.env.OPENAI_API_KEY) {
-      addLog('error', 'FATAL ERROR: OpenAI API key is missing')
+    // Check if OpenRouter API key is available
+    if (!process.env.OPENROUTER_API_KEY) {
+      addLog('error', 'FATAL ERROR: OpenRouter API key is missing')
       const response = NextResponse.json(
         { error: 'OpenAI API key is not configured' },
         { status: 500 }
@@ -220,12 +221,12 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
     ]
 
     // Single call to OpenAI without tools
-    addLog('info', 'Calling OpenAI API', { messageCount: messages.length })
+    addLog('info', 'Calling OpenRouter API', { messageCount: messages.length })
     const completion = await retryOpenAICall(async () => {
       return await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'openai/gpt-4o-mini', // Using OpenAI GPT-4o-mini via OpenRouter
         messages,
-        max_completion_tokens: MAX_TOKENS_PER_REQUEST,
+        max_tokens: MAX_TOKENS_PER_REQUEST,
         temperature: 1,
       })
     })

@@ -34,7 +34,7 @@ export class UserProfileService {
   static async getProfile(phoneNumber: string): Promise<UserProfile | null> {
     try {
       const { data, error } = await supabase
-        .from('user_profiles')
+        .from('users')
         .select('*')
         .eq('phone_number', phoneNumber)
         .single()
@@ -59,7 +59,7 @@ export class UserProfileService {
   static async upsertProfile(profile: UserProfile): Promise<UserProfile | null> {
     try {
       const { data, error } = await supabase
-        .from('user_profiles')
+        .from('users')
         .upsert(profile, {
           onConflict: 'phone_number',
           ignoreDuplicates: false
@@ -83,7 +83,7 @@ export class UserProfileService {
   static async updateProfile(phoneNumber: string, updates: Partial<UserProfile>): Promise<UserProfile | null> {
     try {
       const { data, error } = await supabase
-        .from('user_profiles')
+        .from('users')
         .update(updates)
         .eq('phone_number', phoneNumber)
         .select()

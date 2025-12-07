@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Load environment variables FIRST before any other imports
+require('dotenv').config({ path: require('path').resolve(process.cwd(), '.env.local') })
+
 /**
  * Supabase User Profile Testing Script
  * 
