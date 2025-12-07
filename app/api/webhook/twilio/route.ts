@@ -261,10 +261,18 @@ export async function POST(request: NextRequest) {
       stack: error instanceof Error ? error.stack : undefined
     })
     
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    // Return TwiML error message so user knows something went wrong
+    const errorTwiML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message>sorry, something went wrong. please try again in a moment.</Message>
+</Response>`
+    
+    return new NextResponse(errorTwiML, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/xml'
+      }
+    })
   }
 }
 

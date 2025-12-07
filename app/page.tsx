@@ -12,7 +12,7 @@ export default function Home() {
         <li><strong>GET /logs</strong> - View real-time development logs (dev only)</li>
       </ul>
       
-      <h2>Development</h2>
+      <h2>Development & Debugging</h2>
       <p>
         <a href="/logs" style={{ 
           color: '#0070f3', 
@@ -22,14 +22,45 @@ export default function Home() {
           backgroundColor: '#f0f0f0',
           borderRadius: '4px',
           display: 'inline-block',
-          marginTop: '10px'
+          marginTop: '10px',
+          marginRight: '10px'
         }}>
-          View Real-Time Logs 📊
+          View Backend Logs
+        </a>
+        <a 
+          href="https://vercel.com/dashboard" 
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ 
+            color: '#0070f3', 
+            textDecoration: 'none',
+            fontWeight: 'bold',
+            padding: '8px 16px',
+            backgroundColor: '#f0f0f0',
+            borderRadius: '4px',
+            display: 'inline-block',
+            marginTop: '10px'
+          }}
+        >
+          Vercel Dashboard Logs
         </a>
       </p>
       
       <h2>Setup</h2>
-      <p>Configure your Twilio webhook URL to point to: <code>{typeof window !== 'undefined' ? window.location.origin : '[your-domain]'}/api/webhook/twilio</code></p>
+      <p>Configure your Twilio webhook URL to point to:</p>
+      <code style={{ 
+        display: 'block', 
+        padding: '10px', 
+        backgroundColor: '#f0f0f0', 
+        borderRadius: '4px',
+        marginTop: '10px',
+        wordBreak: 'break-all'
+      }}>
+        {typeof window !== 'undefined' ? `${window.location.origin}/api/webhook/twilio` : '[your-domain]/api/webhook/twilio'}
+      </code>
+      <p style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
+        Current URL: <strong>{typeof window !== 'undefined' ? window.location.origin : 'N/A'}</strong>
+      </p>
       
       <h2>Environment Variables</h2>
       <ul>

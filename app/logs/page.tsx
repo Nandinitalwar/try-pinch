@@ -13,7 +13,12 @@ export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [filter, setFilter] = useState<string>('')
   const [autoScroll, setAutoScroll] = useState(true)
+  const [isProduction, setIsProduction] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setIsProduction(window.location.hostname.includes('vercel.app'))
+  }, [])
 
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
@@ -80,8 +85,28 @@ export default function LogsPage() {
         backgroundColor: '#0a0a0a'
       }}>
         <h1 style={{ margin: '0 0 15px 0', fontSize: '24px' }}>
-          🔍 Development Logs
+          Backend Logs
         </h1>
+        {isProduction && (
+          <div style={{ 
+            marginBottom: '15px', 
+            padding: '10px', 
+            backgroundColor: '#2a2a2a', 
+            borderRadius: '4px',
+            fontSize: '12px',
+            color: '#ffaa00'
+          }}>
+            <strong>Production Mode:</strong> In-memory logs only show current session. For full logs, check{' '}
+            <a 
+              href="https://vercel.com/dashboard" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{ color: '#4a9eff', textDecoration: 'underline' }}
+            >
+              Vercel Dashboard → Functions → Logs
+            </a>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text"
@@ -144,7 +169,11 @@ export default function LogsPage() {
             color: '#666',
             fontSize: '14px'
           }}>
-            {logs.length === 0 ? 'No logs yet. Make an API request to see logs appear here.' : 'No logs match your filter.'}
+            {logs.length === 0 
+              ? (isProduction 
+                  ? 'No in-memory logs. Check Vercel Dashboard for function logs, or make a request to see logs here.' 
+                  : 'No logs yet. Make an API request to see logs appear here.')
+              : 'No logs match your filter.'}
           </div>
         ) : (
           filteredLogs.map((log, index) => (
