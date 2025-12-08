@@ -20,6 +20,18 @@ export class ChatStorage {
    */
   static async getUserIdByPhone(phoneNumber: string): Promise<string | null> {
     try {
+      if (!phoneNumber) {
+        console.error('getUserIdByPhone: phoneNumber is empty or null')
+        return null
+      }
+
+      if (!supabase) {
+        console.error('getUserIdByPhone: Supabase client is null - check environment variables')
+        return null
+      }
+
+      console.log('getUserIdByPhone: Looking for user with phone:', phoneNumber)
+      
       // Try to find existing user
       const { data: user, error } = await supabase
         .from('users')
@@ -28,22 +40,29 @@ export class ChatStorage {
         .single()
 
       if (user) {
+        console.log('getUserIdByPhone: Found existing user:', user.id)
         return user.id
       }
 
       // If user doesn't exist, create them
       if (error?.code === 'PGRST116') {
+        console.log('getUserIdByPhone: User not found, creating new user with phone:', phoneNumber)
+        console.log('Inserting user with phone_number:', phoneNumber)
         const { data: newUser, error: insertError } = await supabase
           .from('users')
           .insert({ phone_number: phoneNumber })
-          .select('id')
+          .select('id, phone_number')
           .single()
 
         if (insertError) {
           console.error('Error creating user:', insertError)
+          console.error('Phone number used:', phoneNumber)
+          console.error('Phone number type:', typeof phoneNumber)
+          console.error('Phone number length:', phoneNumber?.length)
           return null
         }
 
+        console.log('getUserIdByPhone: Created new user:', newUser?.id)
         return newUser?.id || null
       }
 

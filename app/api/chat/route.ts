@@ -65,22 +65,34 @@ async function retryOpenAICall<T>(
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      console.log(`OpenRouter API attempt ${attempt}/${maxRetries}`)
+      
       // Add timeout to each API call
       const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('OpenAI API timeout')), 25000)
+        setTimeout(() => reject(new Error('OpenRouter API timeout after 25s')), 25000)
       )
       
-      return await Promise.race([apiCall(), timeoutPromise])
+      const result = await Promise.race([apiCall(), timeoutPromise])
+      console.log(`OpenRouter API attempt ${attempt} succeeded`)
+      return result
     } catch (error) {
       lastError = error as Error
-      console.log(`OpenAI API attempt ${attempt} failed:`, error)
+      console.error(`OpenRouter API attempt ${attempt} failed:`, error)
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        name: error instanceof Error ? error.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined
+      })
       
       if (attempt === maxRetries) {
+        console.error('All OpenRouter API attempts failed')
         throw lastError
       }
       
-      // Wait before retrying (shorter delay)
-      await new Promise(resolve => setTimeout(resolve, delay * attempt))
+      // Wait before retrying (exponential backoff)
+      const waitTime = delay * attempt
+      console.log(`Waiting ${waitTime}ms before retry...`)
+      await new Promise(resolve => setTimeout(resolve, waitTime))
     }
   }
   
@@ -232,18 +244,38 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
     console.log('='.repeat(80))
     addLog('info', 'Calling OpenRouter API', { messageCount: messages.length })
     
+    // Check if OpenRouter API key exists
+    if (!process.env.OPENROUTER_API_KEY) {
+      console.error('ERROR: OPENROUTER_API_KEY is not set!')
+      throw new Error('OpenRouter API key is not configured')
+    }
+    
+    console.log('OpenRouter API key exists:', !!process.env.OPENROUTER_API_KEY)
+    console.log('OpenRouter base URL:', openai.baseURL)
+    
     const completion = await retryOpenAICall(async () => {
       console.log('Sending request to OpenRouter API...')
+      console.log('Request URL:', `${openai.baseURL}/chat/completions`)
       const startTime = Date.now()
-      const result = await openai.chat.completions.create({
-        model: 'openai/gpt-4o-mini', // Using OpenAI GPT-4o-mini via OpenRouter
-        messages,
-        max_tokens: MAX_TOKENS_PER_REQUEST,
-        temperature: 1,
-      })
-      const duration = Date.now() - startTime
-      console.log(`OpenRouter API responded in ${duration}ms`)
-      return result
+      
+      try {
+        const result = await openai.chat.completions.create({
+          model: 'openai/gpt-4o-mini', // Using OpenAI GPT-4o-mini via OpenRouter
+          messages,
+          max_tokens: MAX_TOKENS_PER_REQUEST,
+          temperature: 1,
+        })
+        const duration = Date.now() - startTime
+        console.log(`OpenRouter API responded in ${duration}ms`)
+        return result
+      } catch (apiError) {
+        console.error('OpenRouter API call error:', apiError)
+        if (apiError instanceof Error) {
+          console.error('Error message:', apiError.message)
+          console.error('Error name:', apiError.name)
+        }
+        throw apiError
+      }
     })
 
     console.log('\n' + '='.repeat(80))
