@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { UserProfileService } from '@/lib/supabase'
+import { UserProfileService, UserProfile } from '@/lib/supabase'
 import { ChatStorage } from '@/lib/chatStorage'
 import { addLog } from '@/lib/logger'
 import OpenAI from 'openai'
