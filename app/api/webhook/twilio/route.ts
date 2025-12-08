@@ -94,12 +94,19 @@ export async function POST(request: NextRequest) {
     })
     
     // Check if this is a status callback (not an incoming message)
-    if (messageStatus || smsStatus) {
+    // Status callbacks have MessageStatus/SmsStatus but NO Body
+    // Status values like "sent", "delivered", "failed" indicate status callbacks
+    // "received" might be part of incoming message, so we check for Body first
+    const isStatusCallback = !messageBody && (messageStatus || smsStatus) && 
+      (messageStatus === 'sent' || messageStatus === 'delivered' || messageStatus === 'failed' ||
+       smsStatus === 'sent' || smsStatus === 'delivered' || smsStatus === 'failed')
+    
+    if (isStatusCallback) {
       console.log('\n⚠️ STATUS CALLBACK RECEIVED (not an incoming message)')
       console.log('MessageStatus:', messageStatus)
       console.log('SmsStatus:', smsStatus)
       console.log('MessageSid:', messageSid)
-      console.log('Ignoring status callback - returning 200 OK')
+      console.log('No Body parameter - this is a status update, ignoring')
       console.log('='.repeat(80) + '\n')
       
       // Return empty TwiML response for status callbacks
