@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { UserProfileService } from '@/lib/supabase'
 import { ChatStorage } from '@/lib/chatStorage'
 import { addLog } from '@/lib/logger'
+import OpenAI from 'openai'
 
 // Verify that the request came from Twilio
 function validateTwilioSignature(request: NextRequest, body: string): boolean {
@@ -215,89 +216,136 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Call the chat API to get AI response
+    // Call OpenRouter directly (no internal fetch to avoid serverless→serverless issues)
     console.log('\n' + '='.repeat(80))
-    console.log('STEP 2: SENDING REQUEST TO OPENROUTER API')
+    console.log('STEP 2: CALLING OPENROUTER API DIRECTLY')
     console.log('='.repeat(80))
-    const chatApiUrl = `${request.url.split('/api/webhook')[0]}/api/chat`
-    console.log('Chat API URL:', chatApiUrl)
     console.log('User Message:', messageBody)
     console.log('History length:', history.length)
     console.log('Timestamp:', new Date().toISOString())
     console.log('='.repeat(80))
-    addLog('debug', 'Calling chat API', { hasUserProfile: !!userState.userProfile })
     
-    const chatRequestStart = Date.now()
-    const chatResponse = await fetch(chatApiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: messageBody,
-        history: history, // Using Supabase history instead of in-memory
-        phoneNumber: fromNumber,
-        userProfile: userState.userProfile
-      })
-    })
-    const chatRequestDuration = Date.now() - chatRequestStart
-
-    console.log('Chat API response status:', chatResponse.status)
-    console.log('Chat API response time:', chatRequestDuration + 'ms')
-
-    if (!chatResponse.ok) {
-      const errorText = await chatResponse.text()
-      console.log('\n❌ CHAT API ERROR RESPONSE')
-      console.log('='.repeat(80))
-      console.log('Status:', chatResponse.status)
-      console.log('Status Text:', chatResponse.statusText)
-      console.log('Error text:', errorText)
-      console.log('Response headers:', Object.fromEntries(chatResponse.headers.entries()))
-      console.log('='.repeat(80) + '\n')
-      addLog('error', 'Chat API error', { status: chatResponse.status, error: errorText })
-      
-      // Try to parse error as JSON for more details
-      try {
-        const errorJson = JSON.parse(errorText)
-        console.log('Parsed error JSON:', errorJson)
-      } catch (e) {
-        console.log('Error text is not JSON')
+    let aiResponse: string
+    
+    try {
+      // Initialize OpenRouter client with shorter timeout for Vercel
+      if (!process.env.OPENROUTER_API_KEY) {
+        throw new Error('OpenRouter API key is not configured')
       }
       
-      throw new Error(`Chat API error: ${chatResponse.status} - ${errorText}`)
-    }
+      const openai = new OpenAI({
+        apiKey: process.env.OPENROUTER_API_KEY,
+        maxRetries: 1, // Reduce retries for faster failure
+        timeout: 10000, // 10 second timeout (Vercel limit)
+        baseURL: 'https://openrouter.ai/api/v1',
+        defaultHeaders: {
+          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://aiastrologer.vercel.app',
+          'X-Title': 'AI Astrologer SMS Bot'
+        },
+      })
+      
+      // Prepare system prompt
+      const systemPrompt = `You are Pinch, an AI astrologer that behaves like a real astrologer.
 
-    const chatData = await chatResponse.json()
-    const aiResponse = chatData.response
-    
-    if (!aiResponse) {
-      console.log('\n' + '='.repeat(80))
-      console.log('STEP 3 ERROR: NO RESPONSE FROM OPENROUTER')
-      console.log('='.repeat(80))
-      console.log('Chat data received:', JSON.stringify(chatData, null, 2))
-      console.log('='.repeat(80) + '\n')
-      throw new Error('No response from chat API')
+IMPORTANT: 
+1. As soon as the user asks for advice, you should ask for the user's name, date of birth, time of
+birth, and place of birth before providing any responses. Store this information and NEVER ask for it again.
+2. Whenever the user asks for advice, you always reference specific
+astrological data as evidence. 
+3. Always use lowercase. Never use emojis. 
+4. Use gen-z slang whenever appropriate, like "fr", "duuuuude", but never overdo it.
+5. Find a balance that sounds natural, and never be sycophantic. 
+6. Never ramble. Be succinct.
+
+## Advice
+
+Be decisive and give the user the most specific advice possible based on their astrological data.
+Example: "Your lucky color is red. You should wear red today."
+
+## Tone
+
+Never output preamble or postamble. Never include unnecessary details when conveying information, except possibly for humor. Never ask the user if they want extra detail or additional tasks. Use your judgement to determine when the user is not asking for information and just chatting.
+
+NEVER use the following tones:
+- How can I help you
+- Let me know if you need anything else
+- Let me know if you need assistance
+- No problem at all
+- I'll carry that out right away
+- I apologize for the confusion
+
+When the user is just chatting, do not unnecessarily offer help or to explain anything; this sounds robotic. Humor or sass is a much better choice, but use your judgement.`
+
+      // Build messages array
+      const messages = [
+        { role: 'system' as const, content: systemPrompt },
+        ...history,
+        { role: 'user' as const, content: messageBody }
+      ]
+      
+      console.log('Sending request to OpenRouter API...')
+      console.log('Model: openai/gpt-4o-mini')
+      console.log('Message count:', messages.length)
+      
+      const startTime = Date.now()
+      const completion = await openai.chat.completions.create({
+        model: 'openai/gpt-4o-mini',
+        messages,
+        max_tokens: 1000,
+        temperature: 1,
+      })
+      const duration = Date.now() - startTime
+      
+      console.log(`OpenRouter API responded in ${duration}ms`)
+      console.log('Finish reason:', completion.choices[0]?.finish_reason)
+      
+      const assistantMessage = completion.choices[0]?.message
+      aiResponse = assistantMessage?.content || ''
+      
+      if (!aiResponse) {
+        console.error('No response content from OpenRouter')
+        aiResponse = 'sorry, i had trouble processing that. can you try again?'
+      } else {
+        console.log('Response length:', aiResponse.length)
+        console.log('Response preview:', aiResponse.substring(0, 100))
+      }
+      
+    } catch (error) {
+      console.error('\n❌ OPENROUTER API ERROR')
+      console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error)
+      console.error('Error message:', error instanceof Error ? error.message : String(error))
+      
+      // Log error but don't throw - return safe fallback instead
+      addLog('error', 'OpenRouter API error', {
+        type: error instanceof Error ? error.constructor.name : typeof error,
+        message: error instanceof Error ? error.message : String(error)
+      })
+      
+      // Return safe fallback message instead of throwing
+      aiResponse = 'sorry, im having trouble right now. can you try again in a moment?'
     }
     
     console.log('\n' + '='.repeat(80))
     console.log('STEP 3: RESPONSE RECEIVED FROM OPENROUTER')
     console.log('='.repeat(80))
-    console.log('Response length:', aiResponse.length)
     console.log('Response:', aiResponse)
-    console.log('Timestamp:', new Date().toISOString())
     console.log('='.repeat(80))
     addLog('info', 'AI response received', { length: aiResponse?.length || 0 })
 
-    // Save AI response to Supabase
-    console.log('\n💾 SAVING AI RESPONSE TO SUPABASE...')
-    const savedAiMessage = await ChatStorage.saveMessage(fromNumber, 'assistant', aiResponse)
-    if (savedAiMessage) {
-      console.log('✅ AI response saved to Supabase')
-      console.log('Message ID:', savedAiMessage.id)
-      addLog('info', '✅ AI response saved to Supabase', { messageId: savedAiMessage.id })
-    } else {
-      console.log('❌ FAILED to save AI response')
-      addLog('error', 'Failed to save AI response to Supabase')
+    // Save AI response to Supabase (non-blocking - don't fail if this errors)
+    try {
+      console.log('\n💾 SAVING AI RESPONSE TO SUPABASE...')
+      const savedAiMessage = await ChatStorage.saveMessage(fromNumber, 'assistant', aiResponse)
+      if (savedAiMessage) {
+        console.log('✅ AI response saved to Supabase')
+        console.log('Message ID:', savedAiMessage.id)
+        addLog('info', '✅ AI response saved to Supabase', { messageId: savedAiMessage.id })
+      } else {
+        console.log('⚠️ Failed to save AI response (non-critical)')
+      }
+    } catch (saveError) {
+      console.error('⚠️ Error saving AI response (non-critical):', saveError)
+      // Don't throw - continue to send response to user
     }
 
     // Send response back using TwiML
