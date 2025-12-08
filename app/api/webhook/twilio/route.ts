@@ -63,6 +63,8 @@ export async function POST(request: NextRequest) {
     const body = await request.text()
     console.log('\n📥 RAW WEBHOOK BODY:')
     console.log(body)
+    console.log('Body length:', body.length)
+    console.log('Body type:', typeof body)
     console.log('\n📊 PARSED WEBHOOK DATA:')
     addLog('debug', 'Raw webhook body received', { bodyLength: body.length, body: body.substring(0, 200) })
     
@@ -82,6 +84,12 @@ export async function POST(request: NextRequest) {
     const messageSid = params.get('MessageSid')
     const accountSid = params.get('AccountSid')
     
+    // Log all params for debugging
+    console.log('All Twilio params:')
+    for (const [key, value] of params.entries()) {
+      console.log(`  ${key}: ${value}`)
+    }
+    
     // Check if this is a WhatsApp message
     const isWhatsApp = fromNumber?.startsWith('whatsapp:')
     
@@ -89,6 +97,8 @@ export async function POST(request: NextRequest) {
     console.log('From:', fromNumber)
     console.log('To:', toNumber)
     console.log('Message Body:', messageBody)
+    console.log('Message Body type:', typeof messageBody)
+    console.log('Message Body length:', messageBody?.length)
     console.log('Is WhatsApp:', isWhatsApp)
     console.log('='.repeat(80))
     
@@ -102,9 +112,18 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     })
     
-    if (!fromNumber || !messageBody) {
-      addLog('error', 'Missing required fields')
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    if (!fromNumber) {
+      console.error('ERROR: fromNumber is missing')
+      console.error('All params:', Object.fromEntries(params.entries()))
+      addLog('error', 'Missing required field: From')
+      return NextResponse.json({ error: 'Missing required field: From' }, { status: 400 })
+    }
+    
+    if (!messageBody) {
+      console.error('ERROR: messageBody (Body) is missing')
+      console.error('All params:', Object.fromEntries(params.entries()))
+      addLog('error', 'Missing required field: Body')
+      return NextResponse.json({ error: 'Missing required field: Body' }, { status: 400 })
     }
 
     // Load conversation history from Supabase
