@@ -44,16 +44,19 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
 }
 
 // Initialize OpenRouter client (compatible with OpenAI SDK)
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  maxRetries: 3,
-  timeout: 30000, // 30 second timeout
-  baseURL: 'https://openrouter.ai/api/v1',
-  defaultHeaders: {
-    'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://aiastrologer.vercel.app',
-    'X-Title': 'AI Astrologer SMS Bot'
-  },
-})
+// Only create client if API key exists to avoid connection errors
+const openai = process.env.OPENROUTER_API_KEY 
+  ? new OpenAI({
+      apiKey: process.env.OPENROUTER_API_KEY,
+      maxRetries: 3,
+      timeout: 30000, // 30 second timeout
+      baseURL: 'https://openrouter.ai/api/v1',
+      defaultHeaders: {
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://aiastrologer.vercel.app',
+        'X-Title': 'AI Astrologer SMS Bot'
+      },
+    })
+  : null
 
 // Retry function for OpenAI API calls
 async function retryOpenAICall<T>(

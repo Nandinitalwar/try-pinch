@@ -48,14 +48,27 @@ export class ChatStorage {
       if (error?.code === 'PGRST116') {
         console.log('getUserIdByPhone: User not found, creating new user with phone:', phoneNumber)
         console.log('Inserting user with phone_number:', phoneNumber)
+        console.log('Phone number type:', typeof phoneNumber)
+        console.log('Phone number is truthy:', !!phoneNumber)
+        
+        // Validate phone number before insert
+        if (!phoneNumber || phoneNumber.trim() === '') {
+          console.error('ERROR: Cannot create user - phone_number is empty or null')
+          return null
+        }
+        
+        const insertData = { phone_number: phoneNumber.trim() }
+        console.log('Insert data:', JSON.stringify(insertData))
+        
         const { data: newUser, error: insertError } = await supabase
           .from('users')
-          .insert({ phone_number: phoneNumber })
+          .insert(insertData)
           .select('id, phone_number')
           .single()
 
         if (insertError) {
           console.error('Error creating user:', insertError)
+          console.error('Insert data that failed:', JSON.stringify(insertData))
           console.error('Phone number used:', phoneNumber)
           console.error('Phone number type:', typeof phoneNumber)
           console.error('Phone number length:', phoneNumber?.length)
@@ -63,6 +76,7 @@ export class ChatStorage {
         }
 
         console.log('getUserIdByPhone: Created new user:', newUser?.id)
+        console.log('Created user phone_number:', newUser?.phone_number)
         return newUser?.id || null
       }
 
