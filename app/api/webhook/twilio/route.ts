@@ -40,8 +40,11 @@ export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString()
   console.log('\n' + '='.repeat(80))
   console.log('🔔 TWILIO WEBHOOK RECEIVED', timestamp)
+  console.log('URL:', request.url)
+  console.log('Method:', request.method)
+  console.log('Headers:', Object.fromEntries(request.headers.entries()))
   console.log('='.repeat(80))
-  addLog('info', '=== TWILIO WEBHOOK RECEIVED ===', { timestamp })
+  addLog('info', '=== TWILIO WEBHOOK RECEIVED ===', { timestamp, url: request.url })
   
   try {
     // Parse the Twilio webhook data
@@ -308,14 +311,19 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Handle GET requests (for webhook verification)
+// Handle GET requests (for webhook verification and testing)
 export async function GET(request: NextRequest) {
-  console.log('=== WEBHOOK GET REQUEST ===')
+  console.log('\n' + '='.repeat(80))
+  console.log('=== WEBHOOK GET REQUEST (TEST) ===')
   console.log('URL:', request.url)
   console.log('Query params:', Object.fromEntries(new URL(request.url).searchParams.entries()))
+  console.log('Timestamp:', new Date().toISOString())
+  console.log('='.repeat(80) + '\n')
   
   return NextResponse.json({ 
     message: 'Twilio webhook endpoint is active',
-    timestamp: new Date().toISOString()
+    url: request.url,
+    timestamp: new Date().toISOString(),
+    status: 'ok'
   })
 }

@@ -76,6 +76,16 @@ export default function Home() {
       <ul>
         <li>Run <code>npm run test:supabase</code> to verify Supabase integration</li>
         <li>Run <code>npm run dev</code> and visit <code>/logs</code> to see API logs</li>
+        <li>
+          <a href="/api/test" target="_blank" style={{ color: '#0070f3' }}>
+            Test API endpoint
+          </a> - Verify deployment and environment variables
+        </li>
+        <li>
+          <a href="/api/webhook/twilio" target="_blank" style={{ color: '#0070f3' }}>
+            Test webhook endpoint
+          </a> - Should return JSON if working
+        </li>
       </ul>
       
       <p style={{ marginTop: '40px', color: '#666' }}>
