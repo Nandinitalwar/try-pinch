@@ -218,34 +218,43 @@ export async function POST(request: NextRequest) {
       // Load existing profile from Supabase
       const existingProfile = await UserProfileService.getProfile(fromNumber)
       
-      // Merge with existing data
-      const updatedProfile = {
-        phone_number: fromNumber,
+      // Merge with existing data - ensure phone_number is always set
+      const updatedProfile: UserProfile = {
+        phone_number: fromNumber, // Always set phone_number first
         ...existingProfile,
         ...birthDetails
       }
       
-      // Save to Supabase
-      console.log('\n💾 SAVING USER PROFILE TO SUPABASE...')
-      console.log('Profile data:', JSON.stringify(updatedProfile, null, 2))
-      const savedProfile = await UserProfileService.upsertProfile(updatedProfile)
-      if (savedProfile) {
-        console.log('✅ USER PROFILE SAVED TO SUPABASE')
-        console.log('Profile ID:', savedProfile.id)
-        console.log('Phone:', savedProfile.phone_number)
-        console.log('Name:', savedProfile.name)
-        console.log('DOB:', savedProfile.date_of_birth)
-        addLog('info', '✅ User profile saved to Supabase', { 
-          id: savedProfile.id, 
-          phone: fromNumber,
-          name: savedProfile.name,
-          dob: savedProfile.date_of_birth
-        })
-        userState.userProfile = savedProfile
-      } else {
-        console.log('❌ FAILED TO SAVE USER PROFILE')
-        console.error('UserProfileService.upsertProfile returned null')
-        addLog('error', '❌ Failed to save user profile to Supabase', { phone: fromNumber })
+      // Validate phone_number before saving
+      if (!updatedProfile.phone_number || updatedProfile.phone_number.trim() === '') {
+        console.error('ERROR: Cannot save profile - phone_number is missing')
+        updatedProfile.phone_number = fromNumber // Use fromNumber as fallback
+      }
+      
+      // Save to Supabase (non-blocking - don't fail if this errors)
+      try {
+        console.log('\n💾 SAVING USER PROFILE TO SUPABASE...')
+        console.log('Profile data:', JSON.stringify(updatedProfile, null, 2))
+          if (savedProfile) {
+          console.log('✅ USER PROFILE SAVED TO SUPABASE')
+          console.log('Profile ID:', savedProfile.id)
+          console.log('Phone:', savedProfile.phone_number)
+          console.log('Name:', savedProfile.name)
+          console.log('DOB:', savedProfile.date_of_birth)
+          addLog('info', '✅ User profile saved to Supabase', { 
+            id: savedProfile.id, 
+            phone: fromNumber,
+            name: savedProfile.name,
+            dob: savedProfile.date_of_birth
+          })
+          userState.userProfile = savedProfile
+        } else {
+          console.log('⚠️ Failed to save user profile (non-critical)')
+          console.error('UserProfileService.upsertProfile returned null')
+        }
+      } catch (profileError) {
+        console.error('⚠️ Error saving user profile (non-critical):', profileError)
+        // Don't throw - continue processing message
       }
     } else {
       // Try to load existing profile from Supabase if we don't have it in memory
@@ -331,12 +340,22 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
       console.log('Message count:', messages.length)
       
       const startTime = Date.now()
-      const completion = await openai.chat.completions.create({
-        model: 'openai/gpt-4o-mini',
-        messages,
-        max_tokens: 1000,
-        temperature: 1,
-      })
+      
+      // Wrap OpenRouter call with timeout protection
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('OpenRouter API timeout after 9s')), 9000)
+      )
+      
+      const completion = await Promise.race([
+        openai.chat.completions.create({
+          model: 'openai/gpt-4o-mini',
+          messages,
+          max_tokens: 1000,
+          temperature: 1,
+        }),
+        timeoutPromise
+      ])
+      
       const duration = Date.now() - startTime
       
       console.log(`OpenRouter API responded in ${duration}ms`)
@@ -358,14 +377,26 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
       console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error)
       console.error('Error message:', error instanceof Error ? error.message : String(error))
       
+      if (error instanceof Error && error.stack) {
+        console.error('Stack trace:', error.stack.substring(0, 500))
+      }
+      
       // Log error but don't throw - return safe fallback instead
-      addLog('error', 'OpenRouter API error', {
-        type: error instanceof Error ? error.constructor.name : typeof error,
-        message: error instanceof Error ? error.message : String(error)
-      })
+      try {
+        addLog('error', 'OpenRouter API error', {
+          type: error instanceof Error ? error.constructor.name : typeof error,
+          message: error instanceof Error ? error.message : String(error)
+        })
+      } catch (logError) {
+        console.error('Failed to log error:', logError)
+      }
       
       // Return safe fallback message instead of throwing
-      aiResponse = 'sorry, im having trouble right now. can you try again in a moment?'
+      if (error instanceof Error && error.message.includes('timeout')) {
+        aiResponse = 'sorry, that took too long. can you try again?'
+      } else {
+        aiResponse = 'sorry, im having trouble right now. can you try again in a moment?'
+      }
     }
     
     console.log('\n' + '='.repeat(80))

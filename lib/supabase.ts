@@ -63,9 +63,29 @@ export class UserProfileService {
   // Create or update user profile
   static async upsertProfile(profile: UserProfile): Promise<UserProfile | null> {
     try {
+      // Ensure phone_number is always set (required by constraint)
+      if (!profile.phone_number || profile.phone_number.trim() === '') {
+        console.error('ERROR: Cannot upsert profile - phone_number is required')
+        console.error('Profile data:', JSON.stringify(profile, null, 2))
+        
+        // Generate fallback ID if phone_number is missing
+        if (!profile.phone_number) {
+          profile.phone_number = `fallback_${Date.now()}_${Math.random().toString(36).substring(7)}`
+          console.log('Generated fallback phone_number:', profile.phone_number)
+        }
+      }
+      
+      // Ensure phone_number is trimmed
+      const sanitizedProfile = {
+        ...profile,
+        phone_number: profile.phone_number.trim()
+      }
+      
+      console.log('Upserting profile with phone_number:', sanitizedProfile.phone_number)
+      
       const { data, error } = await supabase
         .from('users')
-        .upsert(profile, {
+        .upsert(sanitizedProfile, {
           onConflict: 'phone_number',
           ignoreDuplicates: false
         })
@@ -74,6 +94,7 @@ export class UserProfileService {
 
       if (error) {
         console.error('Error upserting user profile:', error)
+        console.error('Profile data that failed:', JSON.stringify(sanitizedProfile, null, 2))
         return null
       }
 
