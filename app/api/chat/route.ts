@@ -260,7 +260,7 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
     }
     
     console.log('OpenRouter API key exists:', !!process.env.OPENROUTER_API_KEY)
-    console.log('OpenRouter base URL:', openai.baseURL)
+    console.log('OpenRouter base URL:', openai?.baseURL || 'N/A (client not initialized)')
     
     const completion = await retryOpenAICall(async () => {
       if (!openai) {
