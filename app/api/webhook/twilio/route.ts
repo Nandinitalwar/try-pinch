@@ -86,9 +86,9 @@ export async function POST(request: NextRequest) {
     
     // Log all params for debugging
     console.log('All Twilio params:')
-    for (const [key, value] of params.entries()) {
+    Array.from(params.entries()).forEach(([key, value]) => {
       console.log(`  ${key}: ${value}`)
-    }
+    })
     
     // Check if this is a WhatsApp message
     const isWhatsApp = fromNumber?.startsWith('whatsapp:')
