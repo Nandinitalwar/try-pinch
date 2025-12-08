@@ -263,6 +263,10 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
     console.log('OpenRouter base URL:', openai.baseURL)
     
     const completion = await retryOpenAICall(async () => {
+      if (!openai) {
+        throw new Error('OpenRouter client not initialized')
+      }
+      
       console.log('Sending request to OpenRouter API...')
       console.log('Request URL:', `${openai.baseURL}/chat/completions`)
       const startTime = Date.now()
