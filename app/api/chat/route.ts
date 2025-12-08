@@ -222,17 +222,18 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
 
     // Single call to OpenAI without tools
     console.log('\n' + '='.repeat(80))
-    console.log('📤 OPENROUTER API REQUEST')
+    console.log('STEP 2 CONTINUED: OPENROUTER API REQUEST DETAILS')
     console.log('='.repeat(80))
     console.log('Model: openai/gpt-4o-mini')
     console.log('Message count:', messages.length)
     console.log('Max tokens:', MAX_TOKENS_PER_REQUEST)
     console.log('Temperature:', 1)
     console.log('Request timestamp:', new Date().toISOString())
+    console.log('='.repeat(80))
     addLog('info', 'Calling OpenRouter API', { messageCount: messages.length })
     
     const completion = await retryOpenAICall(async () => {
-      console.log('🔄 Sending request to OpenRouter...')
+      console.log('Sending request to OpenRouter API...')
       const startTime = Date.now()
       const result = await openai.chat.completions.create({
         model: 'openai/gpt-4o-mini', // Using OpenAI GPT-4o-mini via OpenRouter
@@ -241,15 +242,17 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
         temperature: 1,
       })
       const duration = Date.now() - startTime
-      console.log(`✅ OpenRouter response received (${duration}ms)`)
+      console.log(`OpenRouter API responded in ${duration}ms`)
       return result
     })
 
-    console.log('\n📥 OPENROUTER API RESPONSE')
+    console.log('\n' + '='.repeat(80))
+    console.log('STEP 3 CONTINUED: OPENROUTER API RESPONSE DETAILS')
     console.log('='.repeat(80))
     console.log('Finish reason:', completion.choices[0]?.finish_reason)
-    console.log('Usage:', JSON.stringify(completion.usage, null, 2))
+    console.log('Token usage:', JSON.stringify(completion.usage, null, 2))
     console.log('Choices count:', completion.choices?.length || 0)
+    console.log('='.repeat(80))
     addLog('info', 'OpenAI API call successful', { 
       finish_reason: completion.choices[0]?.finish_reason,
       tokens: completion.usage

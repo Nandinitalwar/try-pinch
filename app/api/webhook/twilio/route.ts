@@ -39,10 +39,11 @@ const conversationState = new Map<string, {
 export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString()
   console.log('\n' + '='.repeat(80))
-  console.log('🔔 TWILIO WEBHOOK RECEIVED', timestamp)
+  console.log('STEP 1: TEXT RECEIVED FROM TWILIO')
+  console.log('='.repeat(80))
+  console.log('Timestamp:', timestamp)
   console.log('URL:', request.url)
   console.log('Method:', request.method)
-  console.log('Headers:', Object.fromEntries(request.headers.entries()))
   console.log('='.repeat(80))
   addLog('info', '=== TWILIO WEBHOOK RECEIVED ===', { timestamp, url: request.url })
   
@@ -73,13 +74,12 @@ export async function POST(request: NextRequest) {
     // Check if this is a WhatsApp message
     const isWhatsApp = fromNumber?.startsWith('whatsapp:')
     
+    console.log('STEP 1 CONTINUED: PARSED MESSAGE DATA')
     console.log('From:', fromNumber)
     console.log('To:', toNumber)
-    console.log('MessageSid:', messageSid)
-    console.log('AccountSid:', accountSid)
     console.log('Message Body:', messageBody)
     console.log('Is WhatsApp:', isWhatsApp)
-    console.log('All Params:', Object.fromEntries(params.entries()))
+    console.log('='.repeat(80))
     
     addLog('info', 'Incoming message details', { 
       from: fromNumber, 
@@ -186,13 +186,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Call the chat API to get AI response
-    console.log('\n📞 CALLING CHAT API')
+    console.log('\n' + '='.repeat(80))
+    console.log('STEP 2: SENDING REQUEST TO OPENROUTER API')
     console.log('='.repeat(80))
     const chatApiUrl = `${request.url.split('/api/webhook')[0]}/api/chat`
     console.log('Chat API URL:', chatApiUrl)
-    console.log('Message:', messageBody)
+    console.log('User Message:', messageBody)
     console.log('History length:', history.length)
-    console.log('Has user profile:', !!userState.userProfile)
+    console.log('Timestamp:', new Date().toISOString())
+    console.log('='.repeat(80))
     addLog('debug', 'Calling chat API', { hasUserProfile: !!userState.userProfile })
     
     const chatRequestStart = Date.now()
@@ -228,19 +230,21 @@ export async function POST(request: NextRequest) {
     const aiResponse = chatData.response
     
     if (!aiResponse) {
-      console.log('\n❌ NO RESPONSE FROM CHAT API')
+      console.log('\n' + '='.repeat(80))
+      console.log('STEP 3 ERROR: NO RESPONSE FROM OPENROUTER')
       console.log('='.repeat(80))
       console.log('Chat data received:', JSON.stringify(chatData, null, 2))
-      console.log('Response object:', chatData)
       console.log('='.repeat(80) + '\n')
       throw new Error('No response from chat API')
     }
     
-    console.log('\n✅ AI RESPONSE RECEIVED')
+    console.log('\n' + '='.repeat(80))
+    console.log('STEP 3: RESPONSE RECEIVED FROM OPENROUTER')
     console.log('='.repeat(80))
     console.log('Response length:', aiResponse.length)
     console.log('Response:', aiResponse)
-    console.log('='.repeat(80) + '\n')
+    console.log('Timestamp:', new Date().toISOString())
+    console.log('='.repeat(80))
     addLog('info', 'AI response received', { length: aiResponse?.length || 0 })
 
     // Save AI response to Supabase
@@ -256,11 +260,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Send response back using TwiML
-    console.log('\n📤 SENDING RESPONSE TO TWILIO')
+    console.log('\n' + '='.repeat(80))
+    console.log('STEP 4: SENDING RESPONSE BACK TO USER VIA TWILIO')
+    console.log('='.repeat(80))
     console.log('Type:', isWhatsApp ? 'WhatsApp' : 'SMS')
     console.log('To:', fromNumber)
     console.log('Response Length:', aiResponse?.length || 0)
-    console.log('Response:', aiResponse)
+    console.log('Response Preview:', aiResponse?.substring(0, 100))
+    console.log('Timestamp:', new Date().toISOString())
+    console.log('='.repeat(80))
     addLog('info', `Sending ${isWhatsApp ? 'WhatsApp' : 'SMS'} response`, { 
       messagePreview: aiResponse?.substring(0, 50) 
     })
@@ -271,9 +279,9 @@ export async function POST(request: NextRequest) {
   <Message>${aiResponse}</Message>
 </Response>`
     
-    console.log('\n✅ WEBHOOK COMPLETE!')
-    console.log('TwiML Response:')
-    console.log(twimlResponse)
+    console.log('\n✅ ALL STEPS COMPLETE - MESSAGE SENT TO USER')
+    console.log('='.repeat(80))
+    console.log('TwiML Response Length:', twimlResponse.length)
     console.log('='.repeat(80) + '\n')
     
     return new NextResponse(twimlResponse, {
