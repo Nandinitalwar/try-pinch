@@ -268,7 +268,7 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
       }
       
       console.log('Sending request to OpenRouter API...')
-      console.log('Request URL:', `${openai.baseURL}/chat/completions`)
+      console.log('Request URL:', `${openai?.baseURL || 'https://openrouter.ai/api/v1'}/chat/completions`)
       const startTime = Date.now()
       
       try {
