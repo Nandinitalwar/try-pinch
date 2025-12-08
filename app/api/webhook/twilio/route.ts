@@ -84,12 +84,36 @@ export async function POST(request: NextRequest) {
     const toNumber = params.get('To')
     const messageSid = params.get('MessageSid')
     const accountSid = params.get('AccountSid')
+    const messageStatus = params.get('MessageStatus')
+    const smsStatus = params.get('SmsStatus')
     
     // Log all params for debugging
     console.log('All Twilio params:')
     Array.from(params.entries()).forEach(([key, value]) => {
       console.log(`  ${key}: ${value}`)
     })
+    
+    // Check if this is a status callback (not an incoming message)
+    if (messageStatus || smsStatus) {
+      console.log('\n⚠️ STATUS CALLBACK RECEIVED (not an incoming message)')
+      console.log('MessageStatus:', messageStatus)
+      console.log('SmsStatus:', smsStatus)
+      console.log('MessageSid:', messageSid)
+      console.log('Ignoring status callback - returning 200 OK')
+      console.log('='.repeat(80) + '\n')
+      
+      // Return empty TwiML response for status callbacks
+      const emptyTwiML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+</Response>`
+      
+      return new NextResponse(emptyTwiML, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/xml'
+        }
+      })
+    }
     
     // Check if this is a WhatsApp message
     const isWhatsApp = fromNumber?.startsWith('whatsapp:')
@@ -123,8 +147,20 @@ export async function POST(request: NextRequest) {
     if (!messageBody) {
       console.error('ERROR: messageBody (Body) is missing')
       console.error('All params:', Object.fromEntries(params.entries()))
+      console.error('This might be a status callback - check MessageStatus or SmsStatus params')
       addLog('error', 'Missing required field: Body')
-      return NextResponse.json({ error: 'Missing required field: Body' }, { status: 400 })
+      
+      // Return empty TwiML instead of error to avoid Twilio retries
+      const emptyTwiML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+</Response>`
+      
+      return new NextResponse(emptyTwiML, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/xml'
+        }
+      })
     }
 
     // Load conversation history from Supabase
