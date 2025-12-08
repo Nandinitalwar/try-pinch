@@ -1,19 +1,24 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error('Missing Supabase environment variables')
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
 // Create Supabase client with service role key for server-side operations
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
-})
+// Log warning if missing but don't crash on import
+if (!supabaseUrl || !supabaseKey) {
+  console.error('WARNING: Missing Supabase environment variables')
+  console.error('NEXT_PUBLIC_SUPABASE_URL:', !!supabaseUrl)
+  console.error('SUPABASE_SERVICE_ROLE_KEY:', !!supabaseKey)
+}
+
+export const supabase = supabaseUrl && supabaseKey 
+  ? createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
+  : null as any // Type assertion to avoid breaking imports, but will fail at runtime if used
 
 // User Profile Types
 export interface UserProfile {

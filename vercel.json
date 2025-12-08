@@ -8,6 +8,9 @@
     "app/api/chat/route.ts": {
       "maxDuration": 30
     },
+    "app/api/webhook/twilio/route.ts": {
+      "maxDuration": 30
+    },
     "app/api/astrology-data/route.ts": {
       "maxDuration": 10
     },

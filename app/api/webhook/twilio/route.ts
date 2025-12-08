@@ -37,15 +37,26 @@ const conversationState = new Map<string, {
 }>()
 
 export async function POST(request: NextRequest) {
+  // Log immediately - this should ALWAYS run if function is called
+  console.log('\n' + '='.repeat(80))
+  console.log('=== WEBHOOK FUNCTION CALLED ===')
+  console.log('Time:', new Date().toISOString())
+  console.log('URL:', request.url)
+  console.log('Method:', request.method)
+  console.log('='.repeat(80))
+  
   const timestamp = new Date().toISOString()
   console.log('\n' + '='.repeat(80))
   console.log('STEP 1: TEXT RECEIVED FROM TWILIO')
   console.log('='.repeat(80))
   console.log('Timestamp:', timestamp)
-  console.log('URL:', request.url)
-  console.log('Method:', request.method)
   console.log('='.repeat(80))
-  addLog('info', '=== TWILIO WEBHOOK RECEIVED ===', { timestamp, url: request.url })
+  
+  try {
+    addLog('info', '=== TWILIO WEBHOOK RECEIVED ===', { timestamp, url: request.url })
+  } catch (e) {
+    console.log('Warning: addLog failed, continuing anyway:', e)
+  }
   
   try {
     // Parse the Twilio webhook data
