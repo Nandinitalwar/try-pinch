@@ -51,14 +51,27 @@ export class ChatStorage {
         console.log('Phone number type:', typeof phoneNumber)
         console.log('Phone number is truthy:', !!phoneNumber)
         
-        // Validate phone number before insert
-        if (!phoneNumber || phoneNumber.trim() === '') {
-          console.error('ERROR: Cannot create user - phone_number is empty or null')
+        // Ensure phone_number is always set - use fallback if needed
+        let finalPhoneNumber = phoneNumber?.trim() || ''
+        
+        if (!finalPhoneNumber || finalPhoneNumber === '') {
+          console.error('ERROR: phone_number is empty or null, generating fallback')
+          // Generate a unique fallback identifier
+          finalPhoneNumber = `fallback_${Date.now()}_${Math.random().toString(36).substring(7)}`
+          console.log('Generated fallback phone_number:', finalPhoneNumber)
+        }
+        
+        // Double-check it's not null/empty before insert
+        if (!finalPhoneNumber || finalPhoneNumber.trim() === '') {
+          console.error('ERROR: Cannot create user - phone_number is still empty after fallback')
           return null
         }
         
-        const insertData = { phone_number: phoneNumber.trim() }
-        console.log('Insert data:', JSON.stringify(insertData))
+        const insertData = { phone_number: finalPhoneNumber.trim() }
+        console.log('Insert data (final):', JSON.stringify(insertData))
+        console.log('Phone number length:', insertData.phone_number.length)
+        console.log('Phone number is not null:', insertData.phone_number !== null)
+        console.log('Phone number is not undefined:', insertData.phone_number !== undefined)
         
         const { data: newUser, error: insertError } = await supabase
           .from('users')
@@ -69,14 +82,21 @@ export class ChatStorage {
         if (insertError) {
           console.error('Error creating user:', insertError)
           console.error('Insert data that failed:', JSON.stringify(insertData))
-          console.error('Phone number used:', phoneNumber)
-          console.error('Phone number type:', typeof phoneNumber)
-          console.error('Phone number length:', phoneNumber?.length)
+          console.error('Phone number used:', finalPhoneNumber)
+          console.error('Phone number type:', typeof finalPhoneNumber)
+          console.error('Phone number length:', finalPhoneNumber?.length)
           return null
         }
 
         console.log('getUserIdByPhone: Created new user:', newUser?.id)
         console.log('Created user phone_number:', newUser?.phone_number)
+        
+        // Verify the created user has phone_number
+        if (!newUser?.phone_number) {
+          console.error('ERROR: Created user but phone_number is null!')
+          console.error('New user data:', JSON.stringify(newUser, null, 2))
+        }
+        
         return newUser?.id || null
       }
 
@@ -125,12 +145,22 @@ export class ChatStorage {
     sessionId?: string
   ): Promise<ChatMessage | null> {
     try {
-      // Get user ID
-      const userId = await this.getUserIdByPhone(phoneNumber)
-      if (!userId) {
-        console.error('Failed to get user ID for phone:', phoneNumber)
+      // Validate phone number before proceeding
+      if (!phoneNumber || phoneNumber.trim() === '') {
+        console.error('saveMessage: phoneNumber is empty or null')
+        console.error('Cannot save message without phone number')
         return null
       }
+      
+      // Get user ID (this will create user if needed)
+      const userId = await this.getUserIdByPhone(phoneNumber.trim())
+      if (!userId) {
+        console.error('Failed to get user ID for phone:', phoneNumber)
+        console.error('This means user creation failed - check logs above')
+        return null
+      }
+      
+      console.log('saveMessage: Got user ID:', userId, 'for phone:', phoneNumber)
 
       // Get or create session ID
       const finalSessionId = sessionId || await this.getOrCreateSession(userId)
