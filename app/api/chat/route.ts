@@ -101,14 +101,20 @@ async function retryOpenAICall<T>(
 
 
 export async function POST(request: NextRequest) {
-  addLog('info', '=== POST /api/chat - Function started ===')
-  addLog('debug', 'Environment check', {
-    NODE_ENV: process.env.NODE_ENV,
-    PRODUCTION_MODE,
-    OPENROUTER_API_KEY_exists: !!process.env.OPENROUTER_API_KEY
-  })
+  // Log immediately at function start
+  console.log('\n' + '='.repeat(80))
+  console.log('=== CHAT API FUNCTION CALLED ===')
+  console.log('Time:', new Date().toISOString())
+  console.log('URL:', request.url)
+  console.log('='.repeat(80))
   
   try {
+    addLog('info', '=== POST /api/chat - Function started ===')
+    addLog('debug', 'Environment check', {
+      NODE_ENV: process.env.NODE_ENV,
+      PRODUCTION_MODE,
+      OPENROUTER_API_KEY_exists: !!process.env.OPENROUTER_API_KEY
+    })
     addLog('info', 'POST /api/chat - Request received', {
       url: request.url,
       method: request.method

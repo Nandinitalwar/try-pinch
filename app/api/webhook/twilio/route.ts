@@ -231,10 +231,21 @@ export async function POST(request: NextRequest) {
       console.log('\n❌ CHAT API ERROR RESPONSE')
       console.log('='.repeat(80))
       console.log('Status:', chatResponse.status)
+      console.log('Status Text:', chatResponse.statusText)
       console.log('Error text:', errorText)
+      console.log('Response headers:', Object.fromEntries(chatResponse.headers.entries()))
       console.log('='.repeat(80) + '\n')
       addLog('error', 'Chat API error', { status: chatResponse.status, error: errorText })
-      throw new Error(`Chat API error: ${chatResponse.status}`)
+      
+      // Try to parse error as JSON for more details
+      try {
+        const errorJson = JSON.parse(errorText)
+        console.log('Parsed error JSON:', errorJson)
+      } catch (e) {
+        console.log('Error text is not JSON')
+      }
+      
+      throw new Error(`Chat API error: ${chatResponse.status} - ${errorText}`)
     }
 
     const chatData = await chatResponse.json()
