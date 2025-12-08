@@ -235,7 +235,8 @@ export async function POST(request: NextRequest) {
       try {
         console.log('\n💾 SAVING USER PROFILE TO SUPABASE...')
         console.log('Profile data:', JSON.stringify(updatedProfile, null, 2))
-          if (savedProfile) {
+        const savedProfile = await UserProfileService.upsertProfile(updatedProfile)
+        if (savedProfile) {
           console.log('✅ USER PROFILE SAVED TO SUPABASE')
           console.log('Profile ID:', savedProfile.id)
           console.log('Phone:', savedProfile.phone_number)
