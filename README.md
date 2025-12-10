@@ -1,183 +1,154 @@
-# 🌟 AstroWorld - AI Astrologer
+# Pinch - SMS AI Astrologer
 
-A beautiful, ChatGPT-like web interface for an AI-powered astrologer that uses OpenAI's GPT models to provide cosmic guidance and astrological insights.
+Lean SMS-based AI astrologer bot. Receives Twilio webhooks and responds via Google Gemini 2.5 Flash API.
 
-## ✨ Features
+## Architecture
 
-- **ChatGPT-like Interface**: Clean, modern chat UI with cosmic theming
-- **AI-Powered Astrology**: Powered by OpenAI's GPT-4 (or GPT-3.5-turbo)
-- **Responsive Design**: Works perfectly on desktop and mobile devices
-- **Dark/Light Theme**: Toggle between cosmic themes
-- **Real-time Chat**: Smooth, responsive chat experience
-- **Context Awareness**: Maintains conversation history for better responses
-- **Beautiful Animations**: Cosmic-themed animations and effects
+- **Framework**: Next.js 14 (App Router)
+- **SMS Gateway**: Twilio webhooks
+- **AI Provider**: Google Gemini 2.5 Flash
+- **Memory**: In-memory storage (ephemeral, per serverless instance)
+- **Hosting**: Vercel
 
-## 🚀 Getting Started
+## Memory Flow
 
-### Prerequisites
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  User sends SMS: "what's my horoscope?"                         │
+└──────────────────────┬──────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Webhook receives message                                        │
+│  - Normalizes phone number                                      │
+│  - Gets/Creates user ID                                          │
+└──────────────────────┬──────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Load Conversation History (last 10 messages)                   │
+│  messagesByUser.get(userId) → [msg1, msg2, ..., msg10]         │
+└──────────────────────┬──────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Save User Message to Memory                                    │
+│  messagesByUser.set(userId, [...existing, newUserMsg])         │
+└──────────────────────┬──────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Pass to InteractionAgent                                       │
+│  AgentContext {                                                 │
+│    userId,                                                      │
+│    phoneNumber,                                                 │
+│    conversationHistory: [                                       │
+│      {role: 'user', content: 'previous msg'},                  │
+│      {role: 'assistant', content: 'previous response'},         │
+│      {role: 'user', content: 'what's my horoscope?'}           │
+│    ]                                                            │
+│  }                                                              │
+└──────────────────────┬──────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Agents Use History                                             │
+│  - TaskDecomposer: Analyzes with context                       │
+│  - GeneralTaskAgent: Calls Gemini with full history             │
+│  - Gemini API: Receives conversation history                    │
+└──────────────────────┬──────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Save AI Response to Memory                                     │
+│  messagesByUser.set(userId, [...existing, newAiMsg])           │
+└──────────────────────┬──────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Return Response to User via TwiML                               │
+└─────────────────────────────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Next SMS arrives                                                │
+│  → Loads updated history (now includes previous exchange)        │
+│  → Process with full context                                    │
+│  → Save new exchange                                            │
+│  → Repeat...                                                    │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-- Node.js 18+ 
-- npm or yarn
-- OpenAI API key
+**Memory Storage:**
+- `messagesByUser`: Map<userId, ChatMessage[]> - All messages per user
+- `sessionByUser`: Map<userId, sessionId> - Current session tracking
+- `usersByPhone`: Map<phoneNumber, userId> - User identity mapping
+
+**Note:** Memory is in-memory only (ephemeral). Lost on server restart/cold start.
+
+## Setup
+
+### Environment Variables
+
+```env
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+GOOGLE_AI_API_KEY=your_google_ai_api_key
+```
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd astroworld
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   # or
-   yarn install
-   ```
-
-3. **Set up environment variables**
-   ```bash
-   cp env.example .env.local
-   ```
-   
-   Edit `.env.local` and add your OpenAI API key:
-   ```env
-   OPENAI_API_KEY=your_actual_api_key_here
-   ```
-
-4. **Run the development server**
-   ```bash
-   npm run dev
-   # or
-   yarn dev
-   ```
-
-5. **Open your browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
-
-## 🔑 OpenAI API Setup
-
-1. **Get an API Key**
-   - Visit [OpenAI Platform](https://platform.openai.com/api-keys)
-   - Sign up or log in to your account
-   - Create a new API key
-
-2. **Add to Environment**
-   - Copy your API key
-   - Paste it in the `.env.local` file
-   - Restart your development server
-
-3. **API Usage**
-   - The app uses GPT-4 by default
-   - You can change to GPT-3.5-turbo in `app/api/chat/route.ts` if needed
-   - Monitor your usage in the OpenAI dashboard
-
-## 🎨 Customization
-
-### Changing the AI Model
-Edit `app/api/chat/route.ts`:
-```typescript
-model: 'gpt-3.5-turbo', // Change from 'gpt-4' if needed
+```bash
+npm install
+npm run dev
 ```
 
-### Modifying the Astrologer Personality
-Edit the `systemPrompt` in `app/api/chat/route.ts` to change how the AI responds.
+### Database Setup
 
-### Styling
-- Colors and themes are in `tailwind.config.js`
-- Custom CSS in `app/globals.css`
-- Component styles use Tailwind CSS classes
+Run `database/unified_schema.sql` in Supabase to create the `users` and `chats` tables.
 
-## 🏗️ Project Structure
+### Twilio Webhook Configuration
 
+Set webhook URL in Twilio Console:
 ```
-astroworld/
-├── app/                    # Next.js 13+ app directory
-│   ├── api/               # API routes
-│   │   └── chat/         # Chat endpoint
-│   ├── globals.css       # Global styles
-│   ├── layout.tsx        # Root layout
-│   └── page.tsx          # Main page
-├── lib/                   # Utility functions
-│   └── utils.ts          # Helper functions
-├── public/                # Static assets
-├── tailwind.config.js     # Tailwind configuration
-├── package.json           # Dependencies
-└── README.md             # This file
+https://your-domain.vercel.app/api/webhook/twilio
+Method: POST
 ```
 
-## 🚀 Deployment
+## API Endpoints
 
-### Vercel (Recommended)
-1. Push your code to GitHub
-2. Connect your repository to Vercel
-3. Add environment variables in Vercel dashboard
-4. Deploy!
+- `POST /api/webhook/twilio` - Twilio webhook handler (main endpoint)
 
-### Other Platforms
-- **Netlify**: Use `npm run build` and deploy the `out` directory
-- **Railway**: Connect your GitHub repo and add environment variables
-- **Heroku**: Use the Node.js buildpack
+## Project Structure
 
-## 💡 Usage Examples
+```
+├── app/
+│   ├── api/
+│   │   └── webhook/twilio/route.ts  # Twilio webhook → Gemini
+│   └── page.tsx                      # Simple homepage
+├── lib/
+│   ├── supabase.ts                  # Supabase client
+│   ├── chatStorage.ts               # User & chat persistence (in-memory)
+│   ├── agents/
+│   │   ├── interactionAgent.ts      # Main orchestrator
+│   │   ├── taskDecomposer.ts        # Task analysis
+│   │   ├── executionAgent.ts        # Base agent class
+│   │   └── agents/
+│   │       └── generalTaskAgent.ts  # General query handler
+│   └── logger.ts                    # Simple console logger
+├── database/
+│   └── unified_schema.sql           # Database schema
+└── vercel.json                      # Vercel configuration
+```
 
-Here are some example questions you can ask AstroWorld:
+## Deployment
 
-- "What's my zodiac sign and what does it mean?"
-- "How do the current planetary transits affect me?"
-- "What crystals should I work with for healing?"
-- "Tell me about my birth chart elements"
-- "What's the spiritual meaning of the full moon?"
-- "How can I align with cosmic energy today?"
+```bash
+vercel --prod
+```
 
-## 🔧 Troubleshooting
+Set environment variables in Vercel dashboard before deploying.
 
-### Common Issues
+## License
 
-1. **"OpenAI API error"**
-   - Check your API key is correct
-   - Ensure you have sufficient API credits
-   - Verify the API key is in `.env.local`
-
-2. **"Module not found" errors**
-   - Run `npm install` again
-   - Clear `.next` folder and restart
-
-3. **Styling issues**
-   - Ensure Tailwind CSS is properly configured
-   - Check that `globals.css` is imported
-
-### Getting Help
-
-- Check the console for error messages
-- Verify your environment variables
-- Ensure all dependencies are installed
-
-## 📱 Browser Support
-
-- Chrome/Edge (latest)
-- Firefox (latest)
-- Safari (latest)
-- Mobile browsers
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- OpenAI for providing the AI capabilities
-- Next.js team for the amazing framework
-- Tailwind CSS for the beautiful styling system
-- The cosmic universe for inspiration ✨
-
----
-**May the stars guide your journey! 🌟** 
+MIT

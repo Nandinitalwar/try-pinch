@@ -12,6 +12,7 @@
     "deploy": "vercel --prod"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.75.0",
     "next": "^14.0.0",
     "openai": "^4.20.0",
