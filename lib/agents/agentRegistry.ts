@@ -34,12 +34,12 @@ export class AgentRegistry {
       this.agents.delete(agentId)
       
       // Remove from task type mapping
-      for (const [taskType, ids] of this.agentsByTask.entries()) {
+      Array.from(this.agentsByTask.entries()).forEach(([taskType, ids]) => {
         const index = ids.indexOf(agentId)
         if (index > -1) {
           ids.splice(index, 1)
         }
-      }
+      })
       
       console.log(`Removed agent ${agentId}`)
     }

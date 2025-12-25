@@ -2,6 +2,9 @@
 import { ExecutionAgent } from '../executionAgent'
 import { ExecutionResult } from '../types'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { BirthDataParser } from '../../birthDataParser'
+import { UserProfileService } from '../../userProfile'
+import { SimpleMemorySystem } from '../../simpleMemory'
 
 export class GeneralTaskAgent extends ExecutionAgent {
   private genAI: GoogleGenerativeAI
@@ -26,20 +29,45 @@ export class GeneralTaskAgent extends ExecutionAgent {
     this.log(`Executing general task: ${this.task}`)
 
     try {
+      // Check if the message contains birth data and save it
+      const birthData = BirthDataParser.extractBirthData(this.task)
+      if (birthData && this.context.phoneNumber) {
+        console.log('[GeneralTaskAgent] Detected birth data:', birthData)
+        const saved = await BirthDataParser.saveBirthData(this.context.phoneNumber, birthData)
+        if (saved) {
+          console.log('[GeneralTaskAgent] Birth data saved successfully')
+        } else {
+          console.error('[GeneralTaskAgent] Failed to save birth data')
+        }
+      }
+      // Get user profile information for context
+      const userProfileContext = UserProfileService.formatProfileForAgent(this.context.userProfile as any)
+      
+      // Get simple user memories for conversational continuity  
+      const userMemoriesContext = SimpleMemorySystem.formatMemories(this.context.userMemories as any || [])
+
       const systemPrompt = `You are Pinch, an AI astrologer that behaves like a real astrologer.
 
 IMPORTANT: 
 1. Be succinct, sarcastic, and slightly edgy.
 2. Don't repeat yourself.
-3. You should ask for the user's name, date of birth, time of birth, and place of birth before providing any responses. Store this information and NEVER ask for it again.
-4. Whenever the user asks for advice, you always reference specific astrological data as evidence. 
-5. Always use lowercase. Never use emojis. 
-6. Use gen-z slang whenever appropriate but don't repeat yourself (check memory), "dude", "rizz", "slay", "no cap", "blessed", "it's giving", "mid" but never overdo it.
+3. Whenever the user asks for advice, you always reference specific astrological data as evidence. 
+4. Always use lowercase. Never use emojis. 
+5. Use gen-z slang whenever appropriate but don't repeat yourself and don't overdo it. Don't use the same slang as the previous message.
+6. Reference what you remember about them naturally in conversation - use it to personalize advice and throw in some gentle roasting when appropriate.
+
+## User Birth Chart Information
+${userProfileContext}
+
+## What You Remember About This User
+${userMemoriesContext}
 
 ## Advice
 
 Be decisive and give the user the most specific advice possible based on their astrological data.
 Example: "Your lucky color is red. You should wear red today."
+When you have their birth data, use it to provide personalized insights based on their actual chart.
+If you don't have their birth data, ask for it naturally in conversation.
 
 ## Tone
 
@@ -74,6 +102,15 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
       })
 
       this.log(`Sending request to Gemini API (${history.length} messages)`)
+      
+      // Log conversation history for debugging
+      console.log('[GeneralTaskAgent] Conversation history being sent:')
+      history.forEach((msg, i) => {
+        console.log(`  ${i + 1}. ${msg.role}: "${msg.parts[0].text}"`)
+      })
+      
+      console.log('[GeneralTaskAgent] System prompt:', systemPrompt.substring(0, 100) + '...')
+      console.log('[GeneralTaskAgent] Current task:', this.task)
 
       // Use startChat for conversation history, or generateContent for single message
       // systemInstruction must be in parts format: { parts: [{ text: "..." }] }
@@ -86,7 +123,7 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
           systemInstruction: systemInstruction,
           history: history.slice(0, -1), // All but last message
           generationConfig: {
-            maxOutputTokens: 1000,
+            maxOutputTokens: 2000,
             temperature: 1,
           }
         })
@@ -97,7 +134,7 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
           contents: history,
           systemInstruction: systemInstruction,
           generationConfig: {
-            maxOutputTokens: 1000,
+            maxOutputTokens: 2000,
             temperature: 1,
           }
         })
@@ -105,6 +142,25 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
 
       const response = result.response
       const output = response.text() || 'sorry, i had trouble processing that. can you try again?'
+      
+      console.log('[GeneralTaskAgent] AI Response received:', output)
+      console.log('[GeneralTaskAgent] Response metadata:', {
+        length: output.length,
+        totalTokens: response.usageMetadata?.totalTokenCount,
+        promptTokens: response.usageMetadata?.promptTokenCount,
+        candidatesTokens: response.usageMetadata?.candidatesTokenCount,
+        finishReason: result.response.candidates?.[0]?.finishReason
+      })
+      
+      // Check if response was truncated
+      const finishReason = result.response.candidates?.[0]?.finishReason
+      if (finishReason === 'MAX_TOKENS') {
+        console.warn('[GeneralTaskAgent] Response was truncated due to token limit')
+      } else if (finishReason === 'SAFETY') {
+        console.warn('[GeneralTaskAgent] Response was blocked by safety filters')
+      } else if (finishReason !== 'STOP') {
+        console.warn('[GeneralTaskAgent] Unexpected finish reason:', finishReason)
+      }
       
       this.log(`Task completed successfully (${output.length} chars)`)
       

@@ -22,5 +22,6 @@ export interface AgentContext {
   phoneNumber: string
   conversationHistory: Array<{ role: 'user' | 'assistant', content: string }>
   userProfile?: Record<string, any>
+  userMemories?: Array<any>
 }
 
