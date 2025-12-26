@@ -28,74 +28,114 @@ function normalizePhone(input: string | null): string | null {
   return digitsOnly || null
 }
 
-// Split message into conversational chunks
-function chunkMessage(message: string, maxChunkLength: number = 1500): string[] {
-  if (message.length <= maxChunkLength) {
+// Meaningful chunking that preserves natural content boundaries
+function chunkMessage(message: string, maxLength: number = 1400): string[] {
+  if (message.length <= maxLength) {
     return [message]
   }
-
+  
   const chunks: string[] = []
-  let remaining = message
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxChunkLength) {
-      chunks.push(remaining)
-      break
-    }
-
-    // Find good break points (sentence endings, then word boundaries)
-    let chunkEnd = maxChunkLength
-    const sentenceEnd = remaining.lastIndexOf('.', chunkEnd)
-    const questionEnd = remaining.lastIndexOf('?', chunkEnd)
-    const exclamationEnd = remaining.lastIndexOf('!', chunkEnd)
+  
+  // Split by double line breaks first (natural topic/section boundaries)
+  const sections = message.split('\n\n').filter(s => s.trim())
+  
+  let currentChunk = ''
+  
+  for (const section of sections) {
+    const potentialChunk = currentChunk ? currentChunk + '\n\n' + section : section
     
-    const bestSentenceEnd = Math.max(sentenceEnd, questionEnd, exclamationEnd)
-    
-    if (bestSentenceEnd > maxChunkLength * 0.6) {
-      chunkEnd = bestSentenceEnd + 1
+    // If adding this section would exceed limit, save current chunk
+    if (potentialChunk.length > maxLength && currentChunk) {
+      chunks.push(currentChunk.trim())
+      currentChunk = section
     } else {
-      // Fall back to word boundary
-      const wordEnd = remaining.lastIndexOf(' ', chunkEnd)
-      if (wordEnd > maxChunkLength * 0.6) {
-        chunkEnd = wordEnd
+      currentChunk = potentialChunk
+    }
+    
+    // If single section is too long, split by sentences at natural points
+    if (currentChunk.length > maxLength) {
+      const sentenceChunks = splitBySentences(currentChunk, maxLength)
+      
+      // Add all but the last chunk
+      for (let i = 0; i < sentenceChunks.length - 1; i++) {
+        chunks.push(sentenceChunks[i].trim())
+      }
+      
+      // Keep the last chunk as current
+      currentChunk = sentenceChunks[sentenceChunks.length - 1] || ''
+    }
+  }
+  
+  // Add remaining content
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim())
+  }
+  
+  return chunks.filter(chunk => chunk.length > 0)
+}
+
+// Split text by sentences while preserving meaning
+function splitBySentences(text: string, maxLength: number): string[] {
+  const chunks: string[] = []
+  
+  // Split by sentence endings but keep the punctuation
+  const sentences = text.split(/(?<=[.!?])\s+/)
+  
+  let currentChunk = ''
+  
+  for (const sentence of sentences) {
+    const potentialChunk = currentChunk ? currentChunk + ' ' + sentence : sentence
+    
+    if (potentialChunk.length <= maxLength) {
+      currentChunk = potentialChunk
+    } else {
+      if (currentChunk) {
+        chunks.push(currentChunk)
+      }
+      currentChunk = sentence
+      
+      // If single sentence is still too long, split it forcefully at word boundaries
+      if (currentChunk.length > maxLength) {
+        const words = currentChunk.split(' ')
+        let wordChunk = ''
+        
+        for (const word of words) {
+          if ((wordChunk + ' ' + word).length <= maxLength) {
+            wordChunk = wordChunk ? wordChunk + ' ' + word : word
+          } else {
+            if (wordChunk) {
+              chunks.push(wordChunk)
+            }
+            wordChunk = word
+          }
+        }
+        
+        currentChunk = wordChunk
       }
     }
-
-    chunks.push(remaining.substring(0, chunkEnd).trim())
-    remaining = remaining.substring(chunkEnd).trim()
   }
-
+  
+  if (currentChunk) {
+    chunks.push(currentChunk)
+  }
+  
   return chunks
 }
 
-// Send messages with delay between chunks
-async function sendChunkedMessages(
-  to: string, 
-  from: string, 
-  chunks: string[], 
-  delayMs: number = 2000,
-  isWhatsApp: boolean = false
-): Promise<void> {
-  for (let i = 0; i < chunks.length; i++) {
-    if (i > 0) {
-      await new Promise(resolve => setTimeout(resolve, delayMs))
-    }
-    
-    const client = await getTwilioClient()
-    if (!client) {
-      throw new Error('Twilio client not initialized')
-    }
-    
-    // Format numbers based on channel type
-    const toNumber = isWhatsApp ? `whatsapp:+${to}` : `+${to}`
-    const fromNumber = isWhatsApp ? `whatsapp:${from}` : from
-    
-    await client.messages.create({
-      body: chunks[i],
-      from: fromNumber,
-      to: toNumber
-    })
-  }
+// Fix WhatsApp text formatting to preserve intended meaning
+function fixWhatsAppFormatting(text: string): string {
+  let fixed = text
+  
+  // Only fix strikethrough pattern (~text~) as it often changes meaning unintentionally
+  // Keep bold (*text*) and italic (_text_) as they're usually intentional formatting
+  
+  // Fix strikethrough - add spaces to break the pattern
+  fixed = fixed.replace(/~([^~\s][^~]*[^~\s])~/g, '~ $1 ~')
+  
+  // Fix edge case where single characters get strikethrough
+  fixed = fixed.replace(/~(\w)~/g, '~ $1 ~')
+  
+  return fixed
 }
 
 export async function POST(request: NextRequest) {
@@ -104,10 +144,12 @@ export async function POST(request: NextRequest) {
     const params = new URLSearchParams(body)
     
     const fromNumberRaw = params.get('From')
+    const toNumberRaw = params.get('To') // This is the Twilio number that received the message
     const fromNumber = normalizePhone(fromNumberRaw)
     const messageBody = params.get('Body')
     const messageStatus = params.get('MessageStatus')
     const smsStatus = params.get('SmsStatus')
+    const messageSid = params.get('MessageSid') // Required for typing indicator
     
     // Ignore status callbacks (no Body parameter)
     if (!messageBody && (messageStatus || smsStatus)) {
@@ -173,6 +215,9 @@ export async function POST(request: NextRequest) {
     // Log the AI response for debugging
     console.log(`[Webhook] AI Response (${aiResponse.length} chars):`, aiResponse)
     
+    // Fix WhatsApp formatting issues to preserve intended meaning
+    aiResponse = fixWhatsAppFormatting(aiResponse)
+    
     // Save AI response (non-blocking)
     try {
       await ChatStorage.saveMessage(userId, 'assistant', aiResponse, undefined, { identifierIsUserId: true })
@@ -195,45 +240,87 @@ export async function POST(request: NextRequest) {
     
     // Send chunked response messages (if Twilio is configured)
     const twilioClientInstance = await getTwilioClient()
-    const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER
     
-    if (twilioClientInstance && twilioPhoneNumber) {
+    // Detect if this is a WhatsApp message
+    const isWhatsApp = fromNumberRaw?.startsWith('whatsapp:') || false
+    console.log(`[Webhook] Detected WhatsApp: ${isWhatsApp}, Original from: ${fromNumberRaw}, Original to: ${toNumberRaw}`)
+    
+    // Use the "To" parameter from the webhook as the sender ID (this is what Twilio uses in TwiML)
+    // This ensures we use the exact same sender ID that Twilio would use automatically
+    let twilioPhoneNumber: string | null = null
+    if (toNumberRaw) {
+      // Extract the phone number from the To parameter (may have whatsapp: prefix)
+      const toNumberNormalized = normalizePhone(toNumberRaw)
+      if (toNumberNormalized) {
+        twilioPhoneNumber = toNumberNormalized
+      }
+    }
+    
+    // Fallback to environment variable if To parameter not available
+    if (!twilioPhoneNumber) {
+      const envWhatsAppId = process.env.TWILIO_WHATSAPP_SENDER_ID || null
+      const envPhoneNumber = process.env.TWILIO_PHONE_NUMBER || null
+      
+      twilioPhoneNumber = isWhatsApp 
+        ? (envWhatsAppId || envPhoneNumber)
+        : envPhoneNumber
+      
+      if (isWhatsApp && !envWhatsAppId) {
+        console.warn('[Webhook] Warning: Using fallback TWILIO_PHONE_NUMBER for WhatsApp (To parameter not available)')
+      }
+    }
+    
+    console.log(`[Webhook] Using sender ID: ${twilioPhoneNumber} (WhatsApp: ${isWhatsApp})`)
+    
+    if (twilioClientInstance && twilioPhoneNumber && twilioPhoneNumber.trim()) {
       try {
-        const chunks = chunkMessage(aiResponse)
-        console.log(`[Webhook] Chunked response into ${chunks.length} parts:`)
-        chunks.forEach((chunk, i) => console.log(`  Chunk ${i + 1}: "${chunk}"`))
+        // Use meaningful chunking for longer responses
+        const chunks = chunkMessage(aiResponse, 1400)
         
-        // Detect if this is a WhatsApp message
-        const isWhatsApp = fromNumberRaw?.startsWith('whatsapp:') || false
-        console.log(`[Webhook] Detected WhatsApp: ${isWhatsApp}, Original from: ${fromNumberRaw}`)
+        const toNumber = isWhatsApp ? `whatsapp:+${fromNumber}` : `+${fromNumber}`
+        const fromFormatted = twilioPhoneNumber.startsWith('+') ? twilioPhoneNumber : `+${twilioPhoneNumber}`
+        const fromNumber_formatted = isWhatsApp ? `whatsapp:${fromFormatted}` : fromFormatted
+
+        console.log(`[Webhook] Sending ${chunks.length} meaningful chunk(s) to ${fromNumber} (${aiResponse.length} total chars)`)
         
-        // Send messages with conversational delays
-        await sendChunkedMessages(fromNumber, twilioPhoneNumber, chunks, 1500, isWhatsApp)
+        // Send each chunk with a brief delay
+        for (let i = 0; i < chunks.length; i++) {
+          console.log(`[Webhook] Sending chunk ${i + 1}/${chunks.length}: ${chunks[i].length} chars`)
+          
+          await twilioClientInstance.messages.create({
+            body: chunks[i],
+            from: fromNumber_formatted,
+            to: toNumber
+          })
+          
+          // Brief delay between chunks (only if multiple)
+          if (i < chunks.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 800))
+          }
+        }
         
-        console.log(`[Webhook] Sent ${chunks.length} message chunks to ${fromNumber}`)
+        console.log(`[Webhook] Sent ${chunks.length} chunk(s) to ${fromNumber}`)
         
-        // Return empty TwiML response since we sent messages directly
+        // Return empty TwiML response since we sent message directly
         return new NextResponse(
           `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`,
           { status: 200, headers: { 'Content-Type': 'text/xml' } }
         )
       } catch (error) {
-        console.error('Failed to send chunked messages:', error)
+        console.error('Failed to send message:', error)
         // Fall through to TwiML response
       }
     } else {
       console.log('[Webhook] Twilio not configured, using TwiML response')
-      // Still demonstrate chunking logic
-      const chunks = chunkMessage(aiResponse)
-      if (chunks.length > 1) {
-        console.log(`[Webhook] Would have chunked into ${chunks.length} parts:`)
-        chunks.forEach((chunk, i) => console.log(`  Chunk ${i + 1}: "${chunk}"`))
-      }
     }
     
-    // Fallback to TwiML response (when chunked messaging isn't available)
+    // Fallback to TwiML response (when direct messaging isn't available)
+    // Use first meaningful chunk only for TwiML
+    const chunks = chunkMessage(aiResponse, 1400)
+    const firstChunk = chunks[0] || aiResponse
+    
     return new NextResponse(
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${aiResponse}</Message></Response>`,
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${firstChunk}</Message></Response>`,
       { status: 200, headers: { 'Content-Type': 'text/xml' } }
     )
     

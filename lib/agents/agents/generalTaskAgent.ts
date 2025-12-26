@@ -123,7 +123,7 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
           systemInstruction: systemInstruction,
           history: history.slice(0, -1), // All but last message
           generationConfig: {
-            maxOutputTokens: 2000,
+            maxOutputTokens: 4000,
             temperature: 1,
           }
         })
@@ -134,7 +134,7 @@ When the user is just chatting, do not unnecessarily offer help or to explain an
           contents: history,
           systemInstruction: systemInstruction,
           generationConfig: {
-            maxOutputTokens: 2000,
+            maxOutputTokens: 4000,
             temperature: 1,
           }
         })

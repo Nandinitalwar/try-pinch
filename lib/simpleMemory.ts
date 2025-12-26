@@ -80,23 +80,8 @@ Importance: 1-10 (higher = more important)`
       
       if (jsonStart !== -1) {
         if (jsonEnd === -1 || jsonEnd < jsonStart) {
-          // JSON is truncated, try to find last complete object
-          const lastObjectStart = cleanedResponse.lastIndexOf('{', cleanedResponse.length)
-          if (lastObjectStart > jsonStart) {
-            // Truncate at last complete object and close the array
-            let truncatePoint = lastObjectStart
-            // Go back to find previous complete object
-            while (truncatePoint > jsonStart && cleanedResponse[truncatePoint] !== '}') {
-              truncatePoint--
-            }
-            if (cleanedResponse[truncatePoint] === '}') {
-              cleanedResponse = cleanedResponse.substring(jsonStart, truncatePoint + 1) + ']'
-            } else {
-              cleanedResponse = cleanedResponse.substring(jsonStart) + ']'
-            }
-          } else {
-            cleanedResponse = cleanedResponse.substring(jsonStart) + ']'
-          }
+          // JSON is truncated, try to repair it
+          cleanedResponse = repairTruncatedJSON(cleanedResponse, jsonStart)
         } else {
           cleanedResponse = cleanedResponse.substring(jsonStart, jsonEnd + 1)
         }
@@ -226,5 +211,60 @@ Importance: 1-10 (higher = more important)`
     })
 
     return context
+  }
+}
+
+// Helper function to repair truncated JSON from Gemini API
+function repairTruncatedJSON(text: string, jsonStart: number): string {
+  const jsonText = text.substring(jsonStart)
+  
+  // Find all complete objects by looking for balanced braces
+  const objects: string[] = []
+  let depth = 0
+  let inString = false
+  let objectStart = -1
+  let currentObject = ''
+  
+  for (let i = 0; i < jsonText.length; i++) {
+    const char = jsonText[i]
+    const prevChar = i > 0 ? jsonText[i - 1] : ''
+    
+    // Handle string boundaries (ignore escaped quotes)
+    if (char === '"' && prevChar !== '\\') {
+      inString = !inString
+    }
+    
+    if (!inString) {
+      if (char === '{') {
+        if (depth === 0) {
+          objectStart = i
+          currentObject = ''
+        }
+        depth++
+      } else if (char === '}') {
+        depth--
+        if (depth === 0 && objectStart !== -1) {
+          currentObject = jsonText.substring(objectStart, i + 1)
+          
+          // Validate that this is a complete, parseable object
+          try {
+            JSON.parse(currentObject)
+            objects.push(currentObject)
+          } catch {
+            // Skip invalid objects
+          }
+          
+          objectStart = -1
+          currentObject = ''
+        }
+      }
+    }
+  }
+  
+  // Return array of valid objects, or empty array if none found
+  if (objects.length > 0) {
+    return '[' + objects.join(',') + ']'
+  } else {
+    return '[]'
   }
 }
