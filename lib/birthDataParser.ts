@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export interface BirthData {
   name?: string
@@ -14,131 +15,175 @@ export interface BirthData {
 }
 
 export class BirthDataParser {
-  static extractBirthData(message: string): BirthData | null {
+  private static genAI: GoogleGenerativeAI | null = null
+  private static model: any = null
+
+  private static initializeAI() {
+    if (!this.genAI) {
+      const rawKey = process.env.GOOGLE_AI_API_KEY
+      const apiKey = rawKey?.trim().replace(/^['"]|['"]$/g, '') || ''
+      if (!apiKey) {
+        console.error('GOOGLE_AI_API_KEY is not configured for BirthDataParser')
+        return false
+      }
+      this.genAI = new GoogleGenerativeAI(apiKey)
+      this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+    }
+    return true
+  }
+
+  static async extractBirthData(message: string, conversationHistory?: Array<{role: string, content: string}>): Promise<BirthData | null> {
     const text = message.toLowerCase()
     
-    // Check if message contains birth-related keywords
-    const birthKeywords = ['birth', 'born', 'birthdate', 'dob', 'date of birth', 'place of birth']
+    // Check if message contains birth-related keywords or date patterns
+    const birthKeywords = ['birth', 'born', 'birthdate', 'dob', 'date of birth', 'place of birth', 'birthday']
     const hasbirthKeywords = birthKeywords.some(keyword => text.includes(keyword))
     
-    // Also check for date patterns
     const datePatterns = [
-      /\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, // DD/MM/YYYY or MM/DD/YYYY
-      /\b\d{1,2}-\d{1,2}-\d{4}\b/g,   // DD-MM-YYYY or MM-DD-YYYY
+      /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
+      /\b\d{1,2}-\d{1,2}-\d{2,4}\b/g,
+      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}/i,
+      /\b\d{1,2}\s+(january|february|march|april|may|june|july|august|september|october|november|december)/i,
     ]
     const hasDatePattern = datePatterns.some(pattern => pattern.test(text))
     
     if (!hasbirthKeywords && !hasDatePattern) {
       return null
     }
-    
+
+    // Initialize AI
+    if (!this.initializeAI()) {
+      console.error('[BirthDataParser] Failed to initialize AI, falling back to basic parsing')
+      return this.extractBirthDataBasic(message)
+    }
+
     try {
-      // Extract name (look for "i'm [name]" or "my name is [name]")
-      let name: string | undefined
-      const namePatterns = [
-        /(?:i'?m|i am)\s+([a-zA-Z]+)/i,
-        /my\s+name\s+is\s+([a-zA-Z]+)/i,
-        /hi\s+i'?m\s+([a-zA-Z]+)/i
-      ]
-      for (const pattern of namePatterns) {
-        const match = message.match(pattern)
-        if (match) {
-          name = match[1].trim()
-          break
+      // Build context from conversation history
+      let conversationContext = ''
+      if (conversationHistory && conversationHistory.length > 0) {
+        const recentHistory = conversationHistory.slice(-10) // Last 10 messages
+        conversationContext = recentHistory.map(m => `${m.role}: ${m.content}`).join('\n')
+      }
+
+      const prompt = `Extract birth information from this user message. The user may be providing their birth details.
+
+${conversationContext ? `Recent conversation context:\n${conversationContext}\n\n` : ''}Current message: "${message}"
+
+Extract any of the following information if present:
+- name: The user's name or preferred name
+- birth_date: Date of birth in YYYY-MM-DD format. Parse dates intelligently - if user says "July 6, 1995" or "7/6/1995" (American format MM/DD/YYYY) or "6/7/1995" (European format DD/MM/YYYY), determine the most likely format based on context. American users typically use MM/DD/YYYY.
+- birth_time: Time of birth in HH:MM:SS format (24-hour). If not provided, use null.
+- birth_time_known: true if they provided a specific time, false otherwise
+- birth_time_accuracy: "exact" if they gave a specific time, "approximate" if they said "around" or "about", "unknown" if no time given
+- birth_city: City where they were born
+- birth_country: Country where they were born
+- birth_timezone: The IANA timezone for the birth location (e.g., "America/Los_Angeles" for California, "America/New_York" for New York, "Europe/London" for UK, "Asia/Kolkata" for India). Determine this based on the birth city/country.
+
+IMPORTANT timezone mappings:
+- California, PST, Pacific: America/Los_Angeles
+- New York, EST, Eastern: America/New_York
+- Chicago, CST, Central: America/Chicago
+- Denver, MST, Mountain: America/Denver
+- London, UK: Europe/London
+- India: Asia/Kolkata
+- If location is in USA and no specific city, try to infer from context or default to America/New_York
+
+Return ONLY a valid JSON object with these fields. Use null for any field you cannot determine.
+Example: {"name": "John", "birth_date": "1995-07-06", "birth_time": "14:30:00", "birth_time_known": true, "birth_time_accuracy": "exact", "birth_city": "San Francisco", "birth_country": "USA", "birth_timezone": "America/Los_Angeles"}
+
+If no birth information is found, return: {"no_birth_data": true}`
+
+      const result = await this.model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          maxOutputTokens: 1000,
+          temperature: 0.1, // Low temperature for accurate extraction
         }
+      })
+
+      const responseText = result.response.text()
+      console.log('[BirthDataParser] AI extraction response:', responseText)
+
+      // Parse JSON from response - handle markdown code blocks
+      let jsonText = responseText
+      // Remove markdown code blocks if present
+      const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/)
+      if (codeBlockMatch) {
+        jsonText = codeBlockMatch[1].trim()
       }
       
-      // Extract date
+      // Extract JSON object
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        console.error('[BirthDataParser] No JSON found in AI response')
+        return this.extractBirthDataBasic(message)
+      }
+
+      const parsed = JSON.parse(jsonMatch[0])
+      
+      if (parsed.no_birth_data) {
+        return null
+      }
+
+      // Validate we have at least a birth date
+      if (!parsed.birth_date) {
+        console.log('[BirthDataParser] No birth date extracted')
+        return null
+      }
+
+      // Build BirthData object
+      const birthData: BirthData = {
+        name: parsed.name || undefined,
+        birth_date: parsed.birth_date,
+        birth_time: parsed.birth_time || '12:00:00',
+        birth_time_known: parsed.birth_time_known || false,
+        birth_time_accuracy: parsed.birth_time_accuracy || 'unknown',
+        birth_timezone: parsed.birth_timezone || 'UTC',
+        birth_city: parsed.birth_city || 'Unknown',
+        birth_country: parsed.birth_country || 'Unknown',
+      }
+
+      console.log('[BirthDataParser] Extracted birth data:', birthData)
+      return birthData
+
+    } catch (error) {
+      console.error('[BirthDataParser] AI extraction error:', error)
+      return this.extractBirthDataBasic(message)
+    }
+  }
+
+  // Fallback basic regex-based extraction
+  private static extractBirthDataBasic(message: string): BirthData | null {
+    try {
       const dateMatch = message.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/)
       if (!dateMatch) {
         return null
       }
-      
+
       const [_, part1, part2, year] = dateMatch
-      
-      // Assume DD/MM/YYYY format (Indian style) for now
-      // In production, you'd use locale detection or ask user to clarify
-      let day = parseInt(part1)
-      let month = parseInt(part2)
-      
-      // Basic validation and format conversion
-      if (month > 12) {
-        // Month is invalid, likely in DD/MM format, so swap
+      let month = parseInt(part1)
+      let day = parseInt(part2)
+
+      // Assume MM/DD/YYYY for American users
+      if (day > 12 && month <= 12) {
+        // Already correct MM/DD format
+      } else if (month > 12) {
         [day, month] = [month, day]
       }
-      
+
       const birthDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`
-      
-      // Extract time
-      let birthTime = '12:00:00' // default noon
-      let timeKnown = false
-      let timeAccuracy: 'exact' | 'approximate' | 'unknown' = 'unknown'
-      
-      const timePatterns = [
-        /\b(\d{1,2}):(\d{2})\s*(am|pm)\b/i, // 3:30 PM
-        /\b(\d{1,2})\s*(am|pm)\b/i,         // 3 PM
-        /\b(\d{1,2}):(\d{2})\b/             // 15:30 (24hr)
-      ]
-      
-      for (const pattern of timePatterns) {
-        const timeMatch = message.match(pattern)
-        if (timeMatch) {
-          timeKnown = true
-          timeAccuracy = 'exact'
-          
-          let hour = parseInt(timeMatch[1])
-          const minute = timeMatch[2] ? parseInt(timeMatch[2]) : 0
-          const ampm = timeMatch[3]?.toLowerCase()
-          
-          if (ampm) {
-            if (ampm === 'pm' && hour !== 12) hour += 12
-            if (ampm === 'am' && hour === 12) hour = 0
-          }
-          
-          // Ensure minute is valid
-          const validMinute = isNaN(minute) ? 0 : minute
-          birthTime = `${hour.toString().padStart(2, '0')}:${validMinute.toString().padStart(2, '0')}:00`
-          break
-        }
-      }
-      
-      // Extract location
-      let city = 'Unknown'
-      let country = 'Unknown'
-      
-      const locationPatterns = [
-        /(?:place of birth|born in|from)\s+([a-zA-Z\s]+)/i,
-        /(?:in|at)\s+([a-zA-Z]+)(?:\s*,?\s*([a-zA-Z]+))?/i
-      ]
-      
-      for (const pattern of locationPatterns) {
-        const locationMatch = message.match(pattern)
-        if (locationMatch) {
-          const parts = locationMatch[1].trim().split(/\s*,\s*/)
-          city = parts[0] || 'Unknown'
-          country = parts[1] || 'Unknown'
-          break
-        }
-      }
-      
-      // Specific handling for common cities
-      if (text.includes('mumbai') || text.includes('bombay')) {
-        city = 'Mumbai'
-        country = 'India'
-      }
-      
+
       return {
-        name,
         birth_date: birthDate,
-        birth_time: birthTime,
-        birth_time_known: timeKnown,
-        birth_time_accuracy: timeAccuracy,
-        birth_timezone: 'Asia/Kolkata', // Default for Indian cities, should be dynamic
-        birth_city: city,
-        birth_country: country
+        birth_time: '12:00:00',
+        birth_time_known: false,
+        birth_time_accuracy: 'unknown',
+        birth_timezone: 'UTC',
+        birth_city: 'Unknown',
+        birth_country: 'Unknown',
       }
     } catch (error) {
-      console.error('Error parsing birth data:', error)
+      console.error('[BirthDataParser] Basic extraction error:', error)
       return null
     }
   }

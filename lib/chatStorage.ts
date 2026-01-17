@@ -1,60 +1,67 @@
 import { v4 as uuidv4 } from 'uuid'
+import { supabase } from './supabase'
 
 // Chat Message Types
 export interface ChatMessage {
   id?: string
-  user_id: string
+  phone_number: string
   session_id: string
   role: 'user' | 'assistant'
   message: string
   created_at?: string
 }
 
-// In-memory stores (ephemeral; cleared on cold start)
-const usersByPhone = new Map<string, string>() // phone -> userId
-const messagesByUser = new Map<string, ChatMessage[]>() // userId -> messages
-const sessionByUser = new Map<string, string>() // userId -> current session
+// In-memory stores (conversation history is ephemeral by design)
+const sessionByPhone = new Map<string, string>()
+const messagesByPhone = new Map<string, ChatMessage[]>()
 
-// Chat Storage Service (in-memory)
+// Chat Storage Service (in-memory chat history, Supabase for user_profiles/memories)
 export class ChatStorage {
   /**
-   * Get or create user ID by phone number (in-memory)
+   * Check if user profile exists in database
    */
-  static async getUserIdByPhone(phoneNumber: string): Promise<string | null> {
-    if (!phoneNumber) return null
-    const existing = usersByPhone.get(phoneNumber)
-    if (existing) return existing
-    const userId = uuidv4()
-    usersByPhone.set(phoneNumber, userId)
-    return userId
+  static async userProfileExists(phoneNumber: string): Promise<boolean> {
+    if (!phoneNumber) return false
+    
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('phone_number', phoneNumber)
+      .single()
+    
+    return !error && !!data
   }
 
   /**
-   * Get or create a session ID for a user (in-memory)
+   * Get or create a session ID for a phone number
    */
-  static async getOrCreateSession(userId: string): Promise<string> {
-    const existing = sessionByUser.get(userId)
+  static async getOrCreateSession(phoneNumber: string): Promise<string> {
+    const existing = sessionByPhone.get(phoneNumber)
     if (existing) return existing
     const sessionId = uuidv4()
-    sessionByUser.set(userId, sessionId)
+    sessionByPhone.set(phoneNumber, sessionId)
     return sessionId
   }
 
   /**
-   * Get or create a user by phone number and return the user UUID (in-memory)
+   * Get or create user - returns phone number as identifier
+   * Note: Full profile creation happens later when birth data is collected
    */
   static async getOrCreateUser(phoneNumber: string): Promise<string | null> {
     const sanitizedPhone = phoneNumber?.trim()
     if (!sanitizedPhone) return null
-    const existing = usersByPhone.get(sanitizedPhone)
-    if (existing) return existing
-    const userId = uuidv4()
-    usersByPhone.set(sanitizedPhone, userId)
-    return userId
+    
+    // Initialize in-memory storage for this phone if needed
+    if (!messagesByPhone.has(sanitizedPhone)) {
+      messagesByPhone.set(sanitizedPhone, [])
+    }
+    
+    // Return phone as the identifier (profile created later with birth data)
+    return sanitizedPhone
   }
 
   /**
-   * Save a chat message
+   * Save a chat message (in-memory only)
    */
   static async saveMessage(
     identifier: string,
@@ -64,43 +71,27 @@ export class ChatStorage {
     options?: { identifierIsUserId?: boolean }
   ): Promise<ChatMessage | null> {
     try {
-      const identifierLabel = options?.identifierIsUserId ? 'userId' : 'phoneNumber'
-
-      // Validate identifier before proceeding
       if (!identifier || identifier.trim() === '') {
-        console.error(`saveMessage: ${identifierLabel} is empty or null`)
-        console.error(`Cannot save message without ${identifierLabel}`)
+        console.error('saveMessage: identifier is empty or null')
         return null
       }
       
-      let userId: string | null = null
-      if (options?.identifierIsUserId) {
-        userId = identifier.trim()
-      } else {
-        userId = await this.getOrCreateUser(identifier.trim())
-      }
+      // identifier is always phone number now
+      const phoneNumber = identifier.trim()
+      const finalSessionId = sessionId || await this.getOrCreateSession(phoneNumber)
 
-      if (!userId) {
-        console.error('Failed to resolve user ID')
-        return null
-      }
-
-      // Get or create session ID
-      const finalSessionId = sessionId || await this.getOrCreateSession(userId)
-
-      // Build message record
       const msg: ChatMessage = {
         id: uuidv4(),
-        user_id: userId,
+        phone_number: phoneNumber,
         session_id: finalSessionId,
         role,
         message,
         created_at: new Date().toISOString()
       }
 
-      const existing = messagesByUser.get(userId) || []
+      const existing = messagesByPhone.get(phoneNumber) || []
       existing.push(msg)
-      messagesByUser.set(userId, existing)
+      messagesByPhone.set(phoneNumber, existing)
 
       return msg
     } catch (error) {
@@ -110,20 +101,20 @@ export class ChatStorage {
   }
 
   /**
-   * Get conversation history for a phone number
-   * Returns the most recent session's messages
+   * Get conversation history for a phone number (in-memory)
    */
   static async getConversationHistory(
     phoneNumber: string,
     limit: number = 20
   ): Promise<ChatMessage[]> {
     try {
-      const userId = await this.getUserIdByPhone(phoneNumber)
-      if (!userId) return []
+      const sanitizedPhone = phoneNumber?.trim()
+      if (!sanitizedPhone) return []
 
-      const all = messagesByUser.get(userId) || []
-      // Return the most recent `limit` messages for the current session (if any)
-      const currentSession = sessionByUser.get(userId)
+      const all = messagesByPhone.get(sanitizedPhone) || []
+      const currentSession = sessionByPhone.get(sanitizedPhone)
+      
+      // Filter to current session if exists
       const filtered = currentSession
         ? all.filter(m => m.session_id === currentSession)
         : all
@@ -146,14 +137,31 @@ export class ChatStorage {
   }
 
   /**
-   * Clear/start new session for a user
+   * Clear/start new session for a phone number
    */
   static async startNewSession(phoneNumber: string): Promise<string> {
-    const userId = await this.getUserIdByPhone(phoneNumber)
     const sessionId = uuidv4()
-    if (userId) {
-      sessionByUser.set(userId, sessionId)
-    }
+    sessionByPhone.set(phoneNumber, sessionId)
     return sessionId
+  }
+
+  /**
+   * Get user memories from database
+   */
+  static async getUserMemories(phoneNumber: string): Promise<Array<{ memory_content: string, memory_type: string, importance: number }>> {
+    if (!phoneNumber) return []
+    
+    const { data, error } = await supabase
+      .from('user_memories')
+      .select('memory_content, memory_type, importance')
+      .eq('phone_number', phoneNumber)
+      .order('importance', { ascending: false })
+    
+    if (error) {
+      console.error('Error fetching memories:', error)
+      return []
+    }
+    
+    return data || []
   }
 }

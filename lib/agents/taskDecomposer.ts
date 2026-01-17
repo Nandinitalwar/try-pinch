@@ -69,7 +69,31 @@ Return ONLY valid JSON object with "tasks" array, no other text.`
       })
 
       const response = result.response.text()
-      const parsed = JSON.parse(response)
+      
+      // Validate response before parsing
+      if (!response || response.trim() === '') {
+        console.warn('[TaskDecomposer] Empty response from Gemini, using fallback')
+        return [{
+          id: uuidv4(),
+          type: 'general_query',
+          description: userMessage,
+          priority: 5
+        }]
+      }
+
+      let parsed: any
+      try {
+        parsed = JSON.parse(response)
+      } catch (parseError) {
+        console.warn('[TaskDecomposer] JSON parse failed, raw response:', response.substring(0, 200))
+        // Fallback for parse errors
+        return [{
+          id: uuidv4(),
+          type: 'general_query',
+          description: userMessage,
+          priority: 5
+        }]
+      }
       
       // Handle both {tasks: [...]} and [...] formats
       let tasksArray: any[] = []
@@ -80,6 +104,16 @@ Return ONLY valid JSON object with "tasks" array, no other text.`
       } else if (parsed.task) {
         tasksArray = [parsed.task]
       }
+
+      // If no valid tasks found, use fallback
+      if (tasksArray.length === 0) {
+        return [{
+          id: uuidv4(),
+          type: 'general_query',
+          description: userMessage,
+          priority: 5
+        }]
+      }
       
       return tasksArray.map((task: any) => ({
         id: uuidv4(),
@@ -89,7 +123,7 @@ Return ONLY valid JSON object with "tasks" array, no other text.`
         requiresAgent: task.requiresAgent
       }))
     } catch (error) {
-      console.error('Task decomposition error:', error)
+      console.error('[TaskDecomposer] Unexpected error:', error)
       // Fallback: return single general task
       return [{
         id: uuidv4(),
