@@ -12,13 +12,13 @@ const tools: any = [
     functionDeclarations: [
       {
         name: "search_web",
-        description: "Search the web for real-time information like current events, restaurants, concerts, news, weather, or anything that requires up-to-date data. Use this when the user asks about specific events, places to go, things happening now, or any question that needs current information.",
+        description: "Search the web for real-time information like current events, restaurants, concerts, news, weather, or anything that requires up-to-date data. Use this when the user asks about specific events, places to go, things happening now, or any question that needs current information. For event queries, call this tool MULTIPLE TIMES with different specific searches to get comprehensive results.",
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
             query: {
               type: SchemaType.STRING,
-              description: "The search query. Be specific and include location/dates if relevant. Example: 'concerts in San Francisco this weekend January 2026'"
+              description: "The search query. Be VERY specific and always include: location, date/month/year (today is January 2026), and event type. For comprehensive event coverage, make multiple searches. Examples: 'SF Sketchfest January 2026 dates lineup', 'San Francisco art exhibits January 2026', 'concerts San Francisco this weekend January 18 2026', 'comedy shows SF January 2026'"
             }
           },
           required: ["query"]
@@ -101,22 +101,31 @@ export class GeneralTaskAgent extends ExecutionAgent {
         console.log('[GeneralTaskAgent] Using Exa AI for search:', query)
         
         // Check if query is about events/concerts/shows to use news category
-        const isEventQuery = /event|concert|show|festival|performance|gig|happening|weekend|tonight|this week/i.test(query)
+        const isEventQuery = /event|concert|show|festival|performance|gig|happening|weekend|tonight|this week|things to do|activities|recs|recommendations/i.test(query)
         
-        // Build search request
+        // Build search request - use searchAndContents for better extraction
         const searchBody: any = {
           query: query,
-          numResults: 8,
-          text: true,
-          type: 'auto'
+          numResults: 10,
+          type: 'auto',
+          contents: {
+            text: {
+              maxCharacters: 1500,  // More text for event details
+              includeHtmlTags: false
+            },
+            highlights: {
+              numSentences: 3,  // Key sentences with dates/details
+              highlightsPerUrl: 2
+            }
+          }
         }
         
         // For event queries, focus on recent content
         if (isEventQuery) {
-          // Get content from last 30 days for freshness
-          const thirtyDaysAgo = new Date()
-          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-          searchBody.startPublishedDate = thirtyDaysAgo.toISOString()
+          // Get content from last 14 days for maximum freshness
+          const twoWeeksAgo = new Date()
+          twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
+          searchBody.startPublishedDate = twoWeeksAgo.toISOString()
           searchBody.category = 'news'  // News category often has event listings
         }
         
@@ -138,23 +147,27 @@ export class GeneralTaskAgent extends ExecutionAgent {
         
         let results = ''
         if (data.results && data.results.length > 0) {
-          results += `Found ${data.results.length} results:\n\n`
-          data.results.forEach((result: any) => {
-            results += `**${result.title}**\n`
+          results += `Found ${data.results.length} results. EXTRACT SPECIFIC EVENTS with names, dates, venues, and links:\n\n`
+          data.results.forEach((result: any, index: number) => {
+            results += `--- Result ${index + 1} ---\n`
+            results += `Title: ${result.title}\n`
+            results += `URL: ${result.url}\n`
             if (result.publishedDate) {
               const date = new Date(result.publishedDate).toLocaleDateString()
               results += `Published: ${date}\n`
             }
-            if (result.text) {
-              // Get more text for better context (500 chars)
-              const snippet = result.text.substring(0, 500).replace(/\n/g, ' ').trim()
-              results += `${snippet}...\n`
+            // Include highlights if available (key sentences)
+            if (result.highlights && result.highlights.length > 0) {
+              results += `Key info: ${result.highlights.join(' | ')}\n`
             }
-            if (result.url) {
-              results += `Source: ${result.url}\n`
+            if (result.text) {
+              // Get substantial text for event extraction (1000 chars)
+              const snippet = result.text.substring(0, 1000).replace(/\n+/g, ' ').trim()
+              results += `Content: ${snippet}\n`
             }
             results += '\n'
           })
+          results += '\nIMPORTANT: From these results, identify SPECIFIC events with dates, times, and venues. Do NOT just list websites - give the user actual event names and details.'
         } else {
           results = `No specific results found for "${query}". `
         }
@@ -256,22 +269,35 @@ When users ask for:
 NEVER say "I'm an astrologer, not a travel guide" or refuse to help with non-astrology requests. That's not who you are. You're a friend who happens to be great at astrology.
 
 ## CRITICAL: Event/Activity Recommendations
-When you have search results with SPECIFIC events, concerts, shows, or activities:
-- Give SPECIFIC names, dates, times, and venues from the search results
-- Include URLs/links when available
-- Explain WHY each event fits their sign (if they asked for astro connection)
-- Format clearly with event name bolded or highlighted
-- Don't just say "check out Funcheap" - give them the actual events you found
+When giving event/activity recommendations, you MUST extract and provide SPECIFIC details:
 
-Example format for event recs:
-"**SF Sketchfest (through Feb 2)**
-500+ performers, variety shows, comedy. Perfect for Geminis who crave mental stimulation.
-https://sfsketchfest.com
+REQUIRED for each event:
+- Event name (specific show, festival, exhibit name)
+- Dates (exact dates like "Jan 25" or ranges like "through Feb 2")
+- Venue name and location
+- Direct URL/link to tickets or info
+- Brief description of what it is
+- Why it fits their astrological profile
 
-**Bob Weir at Bill Graham Civic (Sat Jan 18)**
-Live music, communal energy. Your chart loves group experiences right now."
+NEVER do this:
+- "Check out Funcheap for events" ❌
+- "Here are some websites to look at" ❌
+- "You might find something on Eventbrite" ❌
 
-Be SPECIFIC. Use the search results. Don't be lazy and just point to websites.
+ALWAYS do this:
+- "**SF Sketchfest (Now through Feb 2)**
+  500+ performers, variety, wit - perfect Gemini stimulation. The SNL Women tribute (Jan 25) features 9 former cast members.
+  https://sfsketchfest.com" ✓
+
+- "**Art of Manga at de Young (through Jan 25)**
+  Visual storytelling spanning decades of artistic evolution. Your curious nature will love absorbing this diverse info.
+  https://deyoung.famsf.org" ✓
+
+- "**FOG Design+Art at Fort Mason (Jan 21-25)**
+  High-brow design scene, networking, intellectual-meets-social. Air sign energy thrives here.
+  https://fogfair.com" ✓
+
+Give 3-5 SPECIFIC events with all details. Extract this from search results - the info is there, dig it out. If you can't find specific events in the results, say so honestly and THEN suggest checking event sites.
 
 ## Language Bans
 NEVER use these words or phrases:
