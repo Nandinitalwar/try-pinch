@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "test:supabase": "npx tsx test-supabase.ts",
+    "test:condenser": "npx tsx scripts/test-condenser.ts",
     "deploy": "vercel --prod"
   },
   "dependencies": {
