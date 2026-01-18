@@ -16,79 +16,71 @@ function normalizePhone(input: string | null): string | null {
 }
 
 // Condense response if it exceeds WhatsApp character limit
-// NEVER truncates - always uses AI to intelligently summarize
-async function condenseResponse(response: string, attempt: number = 1): Promise<string> {
+async function condenseResponse(response: string): Promise<string> {
   if (response.length <= WHATSAPP_CHAR_LIMIT) {
     return response
   }
 
-  // Safety: max 3 condensation attempts to avoid infinite loops
-  if (attempt > 3) {
-    console.error(`[condenseResponse] Failed to condense after 3 attempts (${response.length} chars). Forcing aggressive condense.`)
-    // Final attempt: ask for extremely short version
-    try {
-      const apiKey = process.env.GOOGLE_AI_API_KEY?.trim().replace(/^['"]|['"]$/g, '') || ''
-      const genAI = new GoogleGenerativeAI(apiKey)
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
-
-      const result = await model.generateContent({
-        contents: [{
-          role: 'user',
-          parts: [{ text: `Rewrite this in EXACTLY 2-3 short sentences (under 500 characters total). Keep the core message only:\n\n${response}` }]
-        }],
-        generationConfig: {
-          maxOutputTokens: 200,
-          temperature: 0.2,
-        }
-      })
-      return result.response.text() || 'Sorry, I had trouble with that. Can you ask again?'
-    } catch {
-      return 'Sorry, I had trouble with that. Can you ask again?'
-    }
-  }
-
-  console.log(`[condenseResponse] Response too long (${response.length} chars), condensing (attempt ${attempt})...`)
+  console.log(`[condenseResponse] Response too long (${response.length} chars), condensing...`)
 
   try {
     const apiKey = process.env.GOOGLE_AI_API_KEY?.trim().replace(/^['"]|['"]$/g, '') || ''
     if (!apiKey) {
-      console.error('[condenseResponse] No API key available')
-      return 'Sorry, I had trouble with that. Can you ask again?'
+      console.error('[condenseResponse] No API key available, truncating')
+      return response.substring(0, WHATSAPP_CHAR_LIMIT - 20) + '... (message truncated)'
     }
 
     const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
-    // Calculate how aggressive we need to be based on attempt number
-    const targetChars = attempt === 1 ? 900 : attempt === 2 ? 700 : 500
+    const prompt = `You are shortening a message to fit WhatsApp's character limit.
+
+ORIGINAL MESSAGE (${response.length} characters):
+${response}
+
+TASK: Rewrite this message to be under 950 characters total.
+
+RULES:
+1. Keep ALL URLs exactly as they are
+2. Keep the same friendly, casual tone
+3. Keep the key recommendations/information
+4. Remove filler words and redundant phrases
+5. Shorten descriptions but keep them meaningful
+6. Output ONLY the shortened message - no commentary
+
+OUTPUT:`
 
     const result = await model.generateContent({
       contents: [{
         role: 'user',
-        parts: [{ text: `Condense this message to under ${targetChars} characters while keeping the same tone and key info. Preserve any URLs. Return ONLY the condensed message, no preamble:\n\n${response}` }]
+        parts: [{ text: prompt }]
       }],
       generationConfig: {
-        maxOutputTokens: 400,
-        temperature: 0.3,
+        maxOutputTokens: 600,
+        temperature: 0.2,
       }
     })
 
-    const condensed = result.response.text()
-    console.log(`[condenseResponse] Condensed from ${response.length} to ${condensed.length} chars (attempt ${attempt})`)
+    const condensed = result.response.text()?.trim()
+    
+    // Validate the condensed response
+    if (!condensed || condensed.length < 100) {
+      console.error(`[condenseResponse] Condensed response too short (${condensed?.length} chars), using truncation`)
+      return response.substring(0, WHATSAPP_CHAR_LIMIT - 20) + '... (message truncated)'
+    }
+    
+    console.log(`[condenseResponse] Condensed from ${response.length} to ${condensed.length} chars`)
 
-    // If still too long, try again with more aggressive condensing
+    // If still too long after condensing, truncate as last resort
     if (condensed.length > WHATSAPP_CHAR_LIMIT) {
-      return condenseResponse(condensed, attempt + 1)
+      console.warn(`[condenseResponse] Still too long (${condensed.length}), truncating`)
+      return condensed.substring(0, WHATSAPP_CHAR_LIMIT - 20) + '... (message truncated)'
     }
 
     return condensed
   } catch (error) {
     console.error('[condenseResponse] Error condensing:', error)
-    // On error, try again if we have attempts left
-    if (attempt < 3) {
-      return condenseResponse(response, attempt + 1)
-    }
-    return 'Sorry, I had trouble with that. Can you ask again?'
+    return response.substring(0, WHATSAPP_CHAR_LIMIT - 20) + '... (message truncated)'
   }
 }
 
