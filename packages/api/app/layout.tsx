@@ -1,15 +1,8 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Pinch – Your AI Astrologer via SMS',
-  description: 'Text Pinch for personality-driven astrological advice. No apps, no jargon, just real talk about your chart.',
-  keywords: ['AI', 'Astrology', 'SMS', 'AI Astrologer', 'Birth Chart', 'Horoscope'],
-  authors: [{ name: 'Pinch' }],
-  openGraph: {
-    title: 'Pinch – Your AI Astrologer via SMS',
-    description: 'Text Pinch for personality-driven astrological advice.',
-    type: 'website',
-  },
+  title: 'Pinch API',
+  description: 'SMS AI Astrologer webhook service',
 }
 
 export default function RootLayout({
@@ -19,14 +12,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body style={{ 
-        fontFamily: 'Arial, sans-serif', 
-        margin: 0, 
-        backgroundColor: '#ffffff',
-        color: '#000000'
-      }}>
+      <body style={{ fontFamily: 'system-ui, sans-serif', margin: 0, backgroundColor: '#f5f5f5' }}>
         {children}
       </body>
     </html>
   )
-} 
+}
