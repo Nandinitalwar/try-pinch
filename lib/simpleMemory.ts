@@ -32,12 +32,13 @@ export class SimpleMemorySystem {
   async extractMemories(userMessage: string, agentResponse: string): Promise<SimpleMemory[]> {
     try {
       const prompt = `Extract memorable facts about this user from their message. Focus on:
-- Preferences (likes/dislikes)  
-- Relationships (family, friends, pets)
+- Preferences (likes/dislikes)
+- Relationships (family, friends, pets, romantic interests)
 - Lifestyle (job, hobbies, living situation)
 - Personal details (name, location, important facts)
+- Upcoming plans and events (dates, trips, interviews, meetings — ALWAYS extract these with high importance so we can follow up later)
 
-Only extract things that would be useful to remember in future conversations.
+Only extract things that would be useful to remember in future conversations. Upcoming plans are VERY important — we want to follow up on them later (e.g. "how was your date with Ram?").
 
 User message: "${userMessage}"
 
@@ -45,18 +46,21 @@ Return as JSON array:
 [
   {
     "memory_content": "hates pineapple pizza",
-    "memory_type": "preference", 
+    "memory_type": "preference",
     "importance": 7
   }
 ]
 
-Types: preference, relationship, lifestyle, personal, other
-Importance: 1-10 (higher = more important)`
+Types: preference, relationship, lifestyle, personal, event, other
+Importance: 1-10 (higher = more important)
+- Upcoming plans/events should ALWAYS be importance 9-10
+- Relationships (who they're dating, friends, family) should be importance 8-9
+- Preferences should be importance 6-8`
 
       const result = await this.model.generateContent({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          maxOutputTokens: 500,
+          maxOutputTokens: 2000,
           temperature: 0.3,
         }
       })

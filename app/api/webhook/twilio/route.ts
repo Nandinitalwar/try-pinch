@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { ChatStorage } from '@/lib/chatStorage'
 import { InteractionAgent } from '@/lib/agents/interactionAgent'
 import { UserProfileService } from '@/lib/userProfile'
 import { SimpleMemorySystem } from '@/lib/simpleMemory'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { bufferMessage } from '@/lib/messageBuffer'
 
-const WHATSAPP_CHAR_LIMIT = 1000  // WhatsApp limit is 1024, leave buffer for escaping
+const WHATSAPP_CHAR_LIMIT = 950  // WhatsApp limit is 1024, leave buffer for XML escaping
 
 // Normalize phone numbers (strip whatsapp: prefix and non-digits)
 function normalizePhone(input: string | null): string | null {
@@ -15,73 +16,65 @@ function normalizePhone(input: string | null): string | null {
   return digitsOnly || null
 }
 
-// Condense response if it exceeds WhatsApp character limit
-async function condenseResponse(response: string): Promise<string> {
+// Split response into multiple messages at natural break points
+// Returns array of message chunks, each under the character limit
+function splitIntoMessages(response: string): string[] {
   if (response.length <= WHATSAPP_CHAR_LIMIT) {
-    return response
+    return [response]
   }
 
-  console.log(`[condenseResponse] Response too long (${response.length} chars), condensing...`)
+  console.log(`[splitIntoMessages] Response is ${response.length} chars, splitting into multiple messages...`)
 
-  try {
-    const apiKey = process.env.GOOGLE_AI_API_KEY?.trim().replace(/^['"]|['"]$/g, '') || ''
-    if (!apiKey) {
-      console.error('[condenseResponse] No API key available, truncating')
-      return response.substring(0, WHATSAPP_CHAR_LIMIT - 20) + '... (message truncated)'
+  const chunks: string[] = []
+  let remaining = response
+
+  while (remaining.length > 0) {
+    if (remaining.length <= WHATSAPP_CHAR_LIMIT) {
+      chunks.push(remaining)
+      break
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+    // Find the best split point within the limit
+    const searchArea = remaining.substring(0, WHATSAPP_CHAR_LIMIT)
 
-    const prompt = `You are shortening a message to fit WhatsApp's character limit.
+    // Priority 1: Split at double newline (paragraph break) - keeps content blocks together
+    let splitPoint = searchArea.lastIndexOf('\n\n')
 
-ORIGINAL MESSAGE (${response.length} characters):
-${response}
-
-TASK: Rewrite this message to be under 950 characters total.
-
-RULES:
-1. Keep ALL URLs exactly as they are
-2. Keep the same friendly, casual tone
-3. Keep the key recommendations/information
-4. Remove filler words and redundant phrases
-5. Shorten descriptions but keep them meaningful
-6. Output ONLY the shortened message - no commentary
-
-OUTPUT:`
-
-    const result = await model.generateContent({
-      contents: [{
-        role: 'user',
-        parts: [{ text: prompt }]
-      }],
-      generationConfig: {
-        maxOutputTokens: 600,
-        temperature: 0.2,
+    // Priority 2: Split at single newline if no paragraph break found
+    if (splitPoint < WHATSAPP_CHAR_LIMIT * 0.4) {
+      const newlinePoint = searchArea.lastIndexOf('\n')
+      if (newlinePoint > WHATSAPP_CHAR_LIMIT * 0.4) {
+        splitPoint = newlinePoint
       }
-    })
-
-    const condensed = result.response.text()?.trim()
-    
-    // Validate the condensed response
-    if (!condensed || condensed.length < 100) {
-      console.error(`[condenseResponse] Condensed response too short (${condensed?.length} chars), using truncation`)
-      return response.substring(0, WHATSAPP_CHAR_LIMIT - 20) + '... (message truncated)'
-    }
-    
-    console.log(`[condenseResponse] Condensed from ${response.length} to ${condensed.length} chars`)
-
-    // If still too long after condensing, truncate as last resort
-    if (condensed.length > WHATSAPP_CHAR_LIMIT) {
-      console.warn(`[condenseResponse] Still too long (${condensed.length}), truncating`)
-      return condensed.substring(0, WHATSAPP_CHAR_LIMIT - 20) + '... (message truncated)'
     }
 
-    return condensed
-  } catch (error) {
-    console.error('[condenseResponse] Error condensing:', error)
-    return response.substring(0, WHATSAPP_CHAR_LIMIT - 20) + '... (message truncated)'
+    // Priority 3: Split at sentence end if no good newline found
+    if (splitPoint < WHATSAPP_CHAR_LIMIT * 0.4) {
+      const sentencePoints = [
+        searchArea.lastIndexOf('. '),
+        searchArea.lastIndexOf('! '),
+        searchArea.lastIndexOf('? ')
+      ]
+      const bestSentence = Math.max(...sentencePoints)
+      if (bestSentence > WHATSAPP_CHAR_LIMIT * 0.3) {
+        splitPoint = bestSentence + 1  // Include the punctuation
+      }
+    }
+
+    // Fallback: just split at limit (shouldn't happen with well-formatted content)
+    if (splitPoint < WHATSAPP_CHAR_LIMIT * 0.3) {
+      splitPoint = WHATSAPP_CHAR_LIMIT
+    }
+
+    const chunk = remaining.substring(0, splitPoint).trim()
+    chunks.push(chunk)
+    remaining = remaining.substring(splitPoint).trim()
+
+    console.log(`[splitIntoMessages] Created chunk of ${chunk.length} chars, ${remaining.length} chars remaining`)
   }
+
+  console.log(`[splitIntoMessages] Split into ${chunks.length} messages`)
+  return chunks
 }
 
 export async function POST(request: NextRequest) {
@@ -107,6 +100,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
     
+    // Buffer the message - waits 1.5s for additional messages before processing
+    console.log(`[${fromNumber}] Incoming: "${messageBody.substring(0, 50)}${messageBody.length > 50 ? '...' : ''}"`)
+    
+    const bufferResult = bufferMessage(fromNumber, messageBody)
+    
+    if (!bufferResult.isFirst) {
+      // This message was added to an existing buffer - return empty response immediately
+      // The original request will handle the combined processing
+      console.log(`[${fromNumber}] Message buffered, returning empty response`)
+      return new NextResponse(
+        `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`,
+        { status: 200, headers: { 'Content-Type': 'text/xml' } }
+      )
+    }
+    
+    // This is the first message - wait for the buffer to complete
+    const combinedMessage = await bufferResult.promise
+    
+    console.log(`[${fromNumber}] Processing combined message: "${combinedMessage.substring(0, 100)}${combinedMessage.length > 100 ? '...' : ''}"`)
+    
     // Get or create user
     const userId = await ChatStorage.getOrCreateUser(fromNumber)
     if (!userId) {
@@ -119,8 +132,8 @@ export async function POST(request: NextRequest) {
     )
     console.log(`[${fromNumber}] History count: ${history.length}`, history.length > 0 ? history : '(new user)')
     
-    // Save user message
-    await ChatStorage.saveMessage(userId, 'user', messageBody, undefined, { identifierIsUserId: true })
+    // Save user message (save the combined message)
+    await ChatStorage.saveMessage(userId, 'user', combinedMessage, undefined, { identifierIsUserId: true })
     
     // Load user profile and memories for context
     const userProfile = await UserProfileService.getUserProfile(fromNumber)
@@ -138,7 +151,7 @@ export async function POST(request: NextRequest) {
         userMemories
       })
       
-      aiResponse = await agent.processMessage(messageBody)
+      aiResponse = await agent.processMessage(combinedMessage)
     } catch (error) {
       console.error('Agent error:', error)
       if (error instanceof Error) {
@@ -154,10 +167,24 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error('Failed to save AI response:', error)
     }
-    
-    // Condense response if it exceeds WhatsApp's 1024 char limit
-    const finalResponse = await condenseResponse(aiResponse)
-    
+
+    // Extract and store memories in background (don't block response — Twilio has 15s timeout)
+    waitUntil(
+      (async () => {
+        try {
+          const memoryExtractor = new SimpleMemorySystem()
+          const memories = await memoryExtractor.extractMemories(combinedMessage, aiResponse)
+          if (memories.length > 0) {
+            console.log(`[${fromNumber}] Extracted ${memories.length} memories:`, memories.map(m => m.memory_content))
+            await memoryExtractor.storeMemories(fromNumber, memories)
+            console.log(`[${fromNumber}] Memories stored successfully`)
+          }
+        } catch (error) {
+          console.error(`[${fromNumber}] Memory extraction/storage error:`, error)
+        }
+      })()
+    )
+
     // Escape XML special characters to prevent TwiML parsing errors
     const escapeXml = (text: string): string => {
       return text
@@ -167,13 +194,19 @@ export async function POST(request: NextRequest) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&apos;')
     }
-    
-    const escapedResponse = escapeXml(finalResponse)
-    console.log(`[${fromNumber}] Sending TwiML response (${escapedResponse.length} chars)`)
-    
+
+    // Split long responses into multiple messages (preserves full content)
+    const messageChunks = splitIntoMessages(aiResponse)
+    const escapedChunks = messageChunks.map(chunk => escapeXml(chunk))
+
+    console.log(`[${fromNumber}] Sending TwiML response: ${messageChunks.length} message(s), ${messageChunks.map(c => c.length).join('+')} chars`)
+
+    // Build TwiML with multiple <Message> tags if needed
+    const messagesTwiml = escapedChunks.map(chunk => `<Message>${chunk}</Message>`).join('')
+
     // Return TwiML response
     return new NextResponse(
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapedResponse}</Message></Response>`,
+      `<?xml version="1.0" encoding="UTF-8"?><Response>${messagesTwiml}</Response>`,
       { status: 200, headers: { 'Content-Type': 'text/xml' } }
     )
     
