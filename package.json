@@ -1,45 +1,17 @@
 {
-  "name": "astroworld-sms",
+  "name": "pinch",
   "version": "1.0.0",
-  "description": "SMS-based AI Astrologer powered by OpenAI and Twilio",
-  "main": "index.js",
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "test:supabase": "npx tsx test-supabase.ts",
-    "test:condenser": "npx tsx scripts/test-condenser.ts",
-    "deploy": "vercel --prod"
-  },
-  "dependencies": {
-    "@google/generative-ai": "^0.24.1",
-    "@supabase/supabase-js": "^2.75.0",
-    "@vercel/functions": "^3.4.1",
-    "next": "^14.0.0",
-    "openai": "^4.20.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "twilio": "^5.8.2",
-    "uuid": "^13.0.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
-    "dotenv": "^17.2.3",
-    "eslint": "^8.0.0",
-    "eslint-config-next": "^14.0.0",
-    "typescript": "^5.2.0"
-  },
-  "keywords": [
-    "ai",
-    "astrology",
-    "openai",
-    "sms",
-    "twilio",
-    "api"
+  "private": true,
+  "description": "Pinch — AI Astrologer via SMS",
+  "workspaces": [
+    "packages/*"
   ],
-  "author": "AstroWorld",
+  "scripts": {
+    "dev:api": "npm run dev -w pinch-api",
+    "dev:website": "npm run dev -w pinch-website",
+    "build:api": "npm run build -w pinch-api",
+    "build:website": "npm run build -w pinch-website"
+  },
+  "author": "Pinch",
   "license": "MIT"
 }

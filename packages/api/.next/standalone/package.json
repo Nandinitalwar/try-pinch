@@ -1,0 +1,17 @@
+{
+  "name": "pinch",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinch — AI Astrologer via SMS",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w pinch-api",
+    "dev:website": "npm run dev -w pinch-website",
+    "build:api": "npm run build -w pinch-api",
+    "build:website": "npm run build -w pinch-website"
+  },
+  "author": "Pinch",
+  "license": "MIT"
+}

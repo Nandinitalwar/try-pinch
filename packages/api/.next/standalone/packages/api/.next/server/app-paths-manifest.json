@@ -1,0 +1,6 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/memory/route": "app/api/memory/route.js",
+  "/page": "app/page.js",
+  "/api/webhook/twilio/route": "app/api/webhook/twilio/route.js"
+}
