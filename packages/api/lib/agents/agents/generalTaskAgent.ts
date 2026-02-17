@@ -12,13 +12,13 @@ const tools: any = [
     functionDeclarations: [
       {
         name: "search_web",
-        description: "Search the web for real-time information like current events, restaurants, concerts, news, weather, daily horoscopes, astrology forecasts, or anything that requires up-to-date data. Use this when the user asks about specific events, places to go, things happening now, or any question that needs current information. For event queries, call this tool MULTIPLE TIMES with different specific searches to get comprehensive results. IMPORTANT: When the user asks for ANY everyday advice (food, plans, what to do, decisions), ALSO search for today's astrology forecast for their sun sign to inform your recommendation.",
+        description: "Search the web for real-time information like current events, restaurants, concerts, news, weather, daily horoscopes, astrology forecasts, or anything that requires up-to-date data. Use this when the user asks about specific events, places to go, things happening now, or any question that needs current information. For event queries, call this tool MULTIPLE TIMES with different specific searches to get comprehensive results. IMPORTANT: When the user asks for ANY everyday advice (food, plans, what to do, decisions), ALSO search for today's astrology forecast for their sun sign to inform your recommendation. CRITICAL: When searching for events happening 'tonight' or 'now', include the current time in your search to find events that haven't started yet.",
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
             query: {
               type: SchemaType.STRING,
-              description: "The search query. Be VERY specific and always include: location, date/month/year (today is February 2026), and event type. For comprehensive event coverage, make multiple searches. For daily astrology, search for the user's sun sign forecast. Examples: 'SF Sketchfest February 2026 dates lineup', 'San Francisco art exhibits February 2026', 'Scorpio daily horoscope February 8 2026', 'astrology forecast today February 2026 transits', 'what should Taurus do today astrology'"
+              description: "The search query. Be VERY specific and always include: location, date/month/year (today is February 2026), time of day if relevant, and event type. For events happening NOW or TONIGHT, specify 'late night' or 'after 9pm' or similar time constraints. For comprehensive event coverage, make multiple searches. For daily astrology, search for the user's sun sign forecast. Examples: 'SF Sketchfest February 2026 dates lineup', 'San Francisco late night events after 9pm February 2026', 'San Francisco bars open now', 'Scorpio daily horoscope February 8 2026', 'astrology forecast today February 2026 transits'"
             }
           },
           required: ["query"]
@@ -242,17 +242,46 @@ export class GeneralTaskAgent extends ExecutionAgent {
       // Get simple user memories for conversational continuity  
       const userMemoriesContext = SimpleMemorySystem.formatMemories(this.context.userMemories as any || [])
 
-      // Get today's date for context
-      const today = new Date()
-      const todayFormatted = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      // Get current date and time in user's timezone (or default to America/Los_Angeles)
+      const userTimezone = (this.context.userProfile as any)?.birth_timezone || 'America/Los_Angeles'
+      const now = new Date()
+
+      const dateFormatted = now.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        timeZone: userTimezone
+      })
+
+      const timeFormatted = now.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: userTimezone
+      })
 
       const systemPrompt = `You are Pinch, a modern astrologer who's been reading charts for decades. You know this user. You know what makes them tick, what they crave, what drains them — all from their chart. Every answer you give should feel like it came from someone who deeply understands their personality.
 
 You speak like a friend who genuinely knows them — not a mystical guru, not a corporate bot. You're texting someone who trusts you. Keep it tight.
 
-## Today's Date
-${todayFormatted}
-Use this for any time-sensitive recommendations (events, transits, etc.)
+## Current Date & Time
+${dateFormatted} at ${timeFormatted} (${userTimezone})
+
+CRITICAL TIME-AWARENESS RULES - READ CAREFULLY:
+The user is texting you RIGHT NOW at ${timeFormatted}.
+
+BEFORE recommending ANY event, venue, or activity, you MUST verify:
+1. Is it happening AFTER ${timeFormatted}? If NO → DO NOT RECOMMEND IT
+2. If an event starts at 8:00 PM and it's now 9:30 PM → ALREADY STARTED → DO NOT RECOMMEND
+3. If a place closes at 2:00 PM and it's now 9:30 PM → ALREADY CLOSED → DO NOT RECOMMEND
+
+Time-appropriate recommendations:
+- Late evening (after 8pm): Late-night restaurants, bars open late, clubs, 24-hour spots, events starting after 10pm, or suggest tomorrow's plans
+- Morning (before noon): Breakfast spots, coffee shops, morning activities, daytime events
+- Afternoon (noon-5pm): Lunch spots, afternoon activities, evening events starting after 6pm
+
+If you cannot find anything happening RIGHT NOW or later tonight, say so and suggest tomorrow instead.
 
 ## User Birth Chart Information
 ${userProfileContext}
