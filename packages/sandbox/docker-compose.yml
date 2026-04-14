@@ -1,0 +1,19 @@
+services:
+  sandbox:
+    build: .
+    # Docker's default seccomp profile blocks the unshare/clone3 syscalls that
+    # bubblewrap needs to create unprivileged namespaces. Disabling it on the
+    # OUTER container does not weaken our sandbox — bwrap is inside, and that's
+    # where real isolation happens. This is the same pattern Podman / Buildah /
+    # Flatpak use when running their own sandboxes inside CI containers.
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    # SYS_ADMIN lets bwrap mount a fresh /proc inside its PID namespace.
+    # Only needed because we're running the sandbox inside Docker; on a
+    # bare-metal Linux host bwrap does this unprivileged.
+    cap_add:
+      - SYS_ADMIN
+    volumes:
+      - .:/app
+    command: pytest -v
