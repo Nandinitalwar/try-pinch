@@ -86,6 +86,26 @@ Pinch is an AI astrologer that lives in your WhatsApp messages. Text it anything
 - **Messaging:** Twilio WhatsApp Business API
 - **Web Search:** Exa AI (for real-time astrology forecasts)
 - **Database:** Supabase (user profiles, birth data, conversation memory)
+- **Sandbox:** bubblewrap-based Linux jail for LLM-authored code execution (see [`packages/sandbox/`](packages/sandbox/))
+
+---
+
+## 🛡️ Sandboxed Code Execution
+
+Pinch's agent grounds forecasts in web search (Exa) and does real ephemeris math via LLM-authored Python — both of which expand the trust boundary: search results are attacker-controllable, and LLM-written code is untrusted. A prompt-injection payload in a crawled blog post could otherwise cause the agent to emit Python that reads `SUPABASE_SERVICE_KEY` and exfiltrates it.
+
+The [`packages/sandbox/`](packages/sandbox/) package is a two-runner code-execution service — `naked_run` (unsafe baseline) and `jail_run` (bubblewrap + user / mount / net / pid namespaces, tmpfs rootfs, scrubbed env, rlimits, wall-clock cap) — tested against an escape-attempt suite.
+
+| Attack | naked | jail | Defense |
+|---|---|---|---|
+| Read env secret | lands | **blocked** | env scrubbed before exec |
+| Write outside scratch | lands | **blocked** | tmpfs rootfs; host `/tmp` invisible |
+| Read host file | lands | **blocked** | read-only binds hide host paths |
+| Network egress | lands | **blocked** | empty net namespace |
+| Fork bomb | lands | *xfail* | deferred to Stage 1b (cgroup `pids.max`) |
+| Hang | lands | **blocked** | parent enforces default 1 s wall cap |
+
+Two narrow tools are planned for the Gemini agent — `compute_ephemeris(code)` for chart math and `analyze_user_history(code)` for per-user data analysis — neither of which holds Supabase, Twilio, or Gemini credentials. Full threat model and defense-in-depth layering in [`packages/sandbox/docs/design.md`](packages/sandbox/docs/design.md); roadmap in [`packages/sandbox/ROADMAP.md`](packages/sandbox/ROADMAP.md).
 
 ---
 
@@ -228,6 +248,10 @@ The agent's personality is defined in `lib/agents/agents/generalTaskAgent.ts`. K
 Gemini can call:
 1. **`search_web`** — Searches Exa AI for real-time astrology forecasts
 2. **`save_birth_data`** — Stores user's birth date/time/location when shared
+
+**Planned (sandboxed, see [`packages/sandbox/`](packages/sandbox/)):**
+3. **`compute_ephemeris(code)`** — LLM-authored Python using `pyswisseph` / `skyfield` for real chart / transit / aspect math. No credentials, no network, no filesystem, 128 MB / 0.5 CPU / 2 s cap.
+4. **`analyze_user_history(code)`** — LLM-authored pandas over *the requesting user's own* rows, piped in via stdin. Multi-tenant isolation enforced in the API layer (row-scoped query) before the sandbox ever runs.
 
 ---
 
