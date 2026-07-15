@@ -12,6 +12,10 @@ export interface UserProfile {
   birth_country?: string
   birth_latitude?: number
   birth_longitude?: number
+  sun_sign?: string
+  moon_sign?: string
+  rising_sign?: string
+  chart_json?: string
   updated_at?: string
   created_at?: string
 }
@@ -44,6 +48,10 @@ export class UserProfileService {
         birth_country: doc.birthCountry,
         birth_latitude: doc.birthLatitude,
         birth_longitude: doc.birthLongitude,
+        sun_sign: doc.sunSign,
+        moon_sign: doc.moonSign,
+        rising_sign: doc.risingSign,
+        chart_json: doc.chartJson,
         updated_at: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : undefined,
         created_at: new Date(doc._creationTime).toISOString(),
       }
@@ -82,6 +90,26 @@ export class UserProfileService {
 
     if (profile.birth_timezone) {
       parts.push(`Timezone: ${profile.birth_timezone}`)
+    }
+
+    // Real computed chart - these placements are from an ephemeris, not guesses
+    if (profile.chart_json) {
+      try {
+        const chart = JSON.parse(profile.chart_json)
+        const lines = (chart.placements || []).map(
+          (p: any) => `  ${p.body}: ${p.sign} ${p.degree}°`
+        )
+        if (chart.ascendant) {
+          lines.push(`  Ascendant (Rising): ${chart.ascendant.sign} ${chart.ascendant.degree}°`)
+        } else {
+          lines.push('  Ascendant: unknown (no birth time)')
+        }
+        parts.push(`EXACT natal chart (computed from ephemeris - use ONLY these placements, never guess):\n${lines.join('\n')}`)
+      } catch {
+        // fall through to sign summary
+      }
+    } else if (profile.sun_sign) {
+      parts.push(`Sun: ${profile.sun_sign}${profile.moon_sign ? `, Moon: ${profile.moon_sign}` : ''}${profile.rising_sign ? `, Rising: ${profile.rising_sign}` : ''}`)
     }
 
     return parts.join('\n')

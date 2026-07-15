@@ -15,6 +15,11 @@ export default defineSchema({
     birthCountry: v.optional(v.string()),
     birthLatitude: v.optional(v.number()),
     birthLongitude: v.optional(v.number()),
+    // Computed natal chart (real ephemeris, not LLM-guessed)
+    sunSign: v.optional(v.string()),
+    moonSign: v.optional(v.string()),
+    risingSign: v.optional(v.string()),
+    chartJson: v.optional(v.string()), // full NatalChart serialized
     updatedAt: v.optional(v.number()),
   }).index('by_phone', ['phoneNumber']),
 

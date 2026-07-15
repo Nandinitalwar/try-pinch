@@ -26,6 +26,10 @@ export const upsert = mutation({
     birthCountry: v.optional(v.string()),
     birthLatitude: v.optional(v.number()),
     birthLongitude: v.optional(v.number()),
+    sunSign: v.optional(v.string()),
+    moonSign: v.optional(v.string()),
+    risingSign: v.optional(v.string()),
+    chartJson: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { phoneNumber, ...fields } = args

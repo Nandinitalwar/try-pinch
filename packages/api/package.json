@@ -15,6 +15,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@vercel/functions": "^3.4.1",
+    "astronomy-engine": "^2.1.19",
     "braintrust": "^2.2.2",
     "convex": "^1.42.1",
     "next": "^14.0.0",

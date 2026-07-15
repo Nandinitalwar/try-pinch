@@ -1,4 +1,5 @@
 import { convex, api } from './convexClient'
+import { computeNatalChart } from './astrology'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export interface BirthData {
@@ -78,6 +79,8 @@ Extract any of the following information if present:
 - birth_city: City where they were born
 - birth_country: Country where they were born
 - birth_timezone: The IANA timezone for the birth location (e.g., "America/Los_Angeles" for California, "America/New_York" for New York, "Europe/London" for UK, "Asia/Kolkata" for India). Determine this based on the birth city/country.
+- birth_latitude: Approximate latitude of the birth city in decimal degrees (e.g., 28.61 for New Delhi). City-center precision is fine.
+- birth_longitude: Approximate longitude of the birth city in decimal degrees, negative for west (e.g., -122.42 for San Francisco).
 
 IMPORTANT timezone mappings:
 - California, PST, Pacific: America/Los_Angeles
@@ -89,7 +92,7 @@ IMPORTANT timezone mappings:
 - If location is in USA and no specific city, try to infer from context or default to America/New_York
 
 Return ONLY a valid JSON object with these fields. Use null for any field you cannot determine.
-Example: {"name": "John", "birth_date": "1995-07-06", "birth_time": "14:30:00", "birth_time_known": true, "birth_time_accuracy": "exact", "birth_city": "San Francisco", "birth_country": "USA", "birth_timezone": "America/Los_Angeles"}
+Example: {"name": "John", "birth_date": "1995-07-06", "birth_time": "14:30:00", "birth_time_known": true, "birth_time_accuracy": "exact", "birth_city": "San Francisco", "birth_country": "USA", "birth_timezone": "America/Los_Angeles", "birth_latitude": 37.77, "birth_longitude": -122.42}
 
 If no birth information is found, return: {"no_birth_data": true}`
 
@@ -141,6 +144,8 @@ If no birth information is found, return: {"no_birth_data": true}`
         birth_timezone: parsed.birth_timezone || 'UTC',
         birth_city: parsed.birth_city || 'Unknown',
         birth_country: parsed.birth_country || 'Unknown',
+        birth_latitude: typeof parsed.birth_latitude === 'number' ? parsed.birth_latitude : undefined,
+        birth_longitude: typeof parsed.birth_longitude === 'number' ? parsed.birth_longitude : undefined,
       }
 
       console.log('[BirthDataParser] Extracted birth data:', birthData)
@@ -195,6 +200,33 @@ If no birth information is found, return: {"no_birth_data": true}`
     }
 
     try {
+      // Compute the real natal chart from ephemeris - never LLM-guessed
+      let chartFields: {
+        sunSign?: string
+        moonSign?: string
+        risingSign?: string
+        chartJson?: string
+      } = {}
+      try {
+        const chart = computeNatalChart({
+          birthDate: birthData.birth_date,
+          birthTime: birthData.birth_time,
+          timezone: birthData.birth_timezone,
+          latitude: birthData.birth_latitude,
+          longitude: birthData.birth_longitude,
+          birthTimeKnown: birthData.birth_time_known,
+        })
+        chartFields = {
+          sunSign: chart.placements.find(p => p.body === 'Sun')?.sign,
+          moonSign: chart.placements.find(p => p.body === 'Moon')?.sign,
+          risingSign: chart.ascendant?.sign,
+          chartJson: JSON.stringify(chart),
+        }
+        console.log('[BirthDataParser] Computed chart:', chartFields.sunSign, 'Sun,', chartFields.moonSign, 'Moon,', chartFields.risingSign || 'unknown', 'rising')
+      } catch (chartError) {
+        console.error('[BirthDataParser] Chart computation failed:', chartError)
+      }
+
       await convex.mutation(api.profiles.upsert, {
         phoneNumber,
         preferredName: birthData.name,
@@ -207,6 +239,7 @@ If no birth information is found, return: {"no_birth_data": true}`
         birthCountry: birthData.birth_country,
         birthLatitude: birthData.birth_latitude,
         birthLongitude: birthData.birth_longitude,
+        ...chartFields,
       })
 
       console.log('Birth data saved successfully for', phoneNumber)
