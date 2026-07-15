@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { convex, api } from './convexClient'
 
 export interface UserProfile {
   phone_number: string
@@ -18,29 +18,35 @@ export interface UserProfile {
 
 export class UserProfileService {
   static async getUserProfile(phoneNumber: string): Promise<UserProfile | null> {
-    if (!supabase) {
-      console.error('Supabase not configured')
+    if (!convex) {
+      console.error('Convex not configured')
       return null
     }
 
     try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('phone_number', phoneNumber)
-        .single()
+      const doc = await convex.query(api.profiles.getByPhone, { phoneNumber })
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // No profile found - this is expected for new users
-          console.log(`No profile found for phone number: ${phoneNumber}`)
-          return null
-        }
-        console.error('Error fetching user profile:', error)
+      if (!doc) {
+        // No profile found - this is expected for new users
+        console.log(`No profile found for phone number: ${phoneNumber}`)
         return null
       }
 
-      return data as UserProfile
+      return {
+        phone_number: doc.phoneNumber,
+        preferred_name: doc.preferredName,
+        birth_date: doc.birthDate,
+        birth_time: doc.birthTime,
+        birth_time_known: doc.birthTimeKnown,
+        birth_time_accuracy: doc.birthTimeAccuracy,
+        birth_timezone: doc.birthTimezone,
+        birth_city: doc.birthCity,
+        birth_country: doc.birthCountry,
+        birth_latitude: doc.birthLatitude,
+        birth_longitude: doc.birthLongitude,
+        updated_at: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : undefined,
+        created_at: new Date(doc._creationTime).toISOString(),
+      }
     } catch (error) {
       console.error('Error fetching user profile:', error)
       return null
@@ -53,27 +59,27 @@ export class UserProfileService {
     }
 
     const parts = []
-    
+
     if (profile.preferred_name) {
       parts.push(`User's name: ${profile.preferred_name}`)
     }
-    
+
     if (profile.birth_date) {
       parts.push(`Birth date: ${profile.birth_date}`)
     }
-    
+
     if (profile.birth_time && profile.birth_time_known) {
       const accuracy = profile.birth_time_accuracy || 'unknown'
       parts.push(`Birth time: ${profile.birth_time} (${accuracy})`)
     } else {
       parts.push(`Birth time: Not provided or unknown`)
     }
-    
+
     if (profile.birth_city || profile.birth_country) {
       const location = [profile.birth_city, profile.birth_country].filter(Boolean).join(', ')
       parts.push(`Birth location: ${location}`)
     }
-    
+
     if (profile.birth_timezone) {
       parts.push(`Timezone: ${profile.birth_timezone}`)
     }

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { supabase } from './supabase'
+import { convex, api } from './convexClient'
 
 // Chat Message Types
 export interface ChatMessage {
@@ -11,26 +11,26 @@ export interface ChatMessage {
   created_at?: string
 }
 
-// In-memory stores (conversation history is ephemeral by design)
+// In-memory stores (fast path; Convex is the durable source of truth)
 const sessionByPhone = new Map<string, string>()
 const messagesByPhone = new Map<string, ChatMessage[]>()
 
 
-// Chat Storage Service (in-memory chat history, Supabase for user_profiles/memories)
+// Chat Storage Service (in-memory cache + Convex persistence)
 export class ChatStorage {
   /**
    * Check if user profile exists in database
    */
   static async userProfileExists(phoneNumber: string): Promise<boolean> {
-    if (!phoneNumber) return false
-    
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('id')
-      .eq('phone_number', phoneNumber)
-      .single()
-    
-    return !error && !!data
+    if (!phoneNumber || !convex) return false
+
+    try {
+      const profile = await convex.query(api.profiles.getByPhone, { phoneNumber })
+      return !!profile
+    } catch (error) {
+      console.error('[ChatStorage] Error checking profile:', error)
+      return false
+    }
   }
 
   /**
@@ -51,18 +51,18 @@ export class ChatStorage {
   static async getOrCreateUser(phoneNumber: string): Promise<string | null> {
     const sanitizedPhone = phoneNumber?.trim()
     if (!sanitizedPhone) return null
-    
+
     // Initialize in-memory storage for this phone if needed
     if (!messagesByPhone.has(sanitizedPhone)) {
       messagesByPhone.set(sanitizedPhone, [])
     }
-    
+
     // Return phone as the identifier (profile created later with birth data)
     return sanitizedPhone
   }
 
   /**
-   * Save a chat message (in-memory + Supabase persistence)
+   * Save a chat message (in-memory + Convex persistence)
    */
   static async saveMessage(
     identifier: string,
@@ -76,7 +76,7 @@ export class ChatStorage {
         console.error('saveMessage: identifier is empty or null')
         return null
       }
-      
+
       // identifier is always phone number now
       const phoneNumber = identifier.trim()
       const finalSessionId = sessionId || await this.getOrCreateSession(phoneNumber)
@@ -95,21 +95,18 @@ export class ChatStorage {
       existing.push(msg)
       messagesByPhone.set(phoneNumber, existing)
 
-      // Persist to Supabase
-      if (supabase) {
-        const { error: chatError } = await supabase
-          .from('sms_chats')
-          .insert({
-            phone_number: phoneNumber,
-            session_id: finalSessionId,
-            role: role,
-            message: message
+      // Persist to Convex
+      if (convex) {
+        try {
+          await convex.mutation(api.chats.save, {
+            phoneNumber,
+            sessionId: finalSessionId,
+            role,
+            message,
           })
-
-        if (chatError) {
-          console.error('[ChatStorage] Error persisting chat:', chatError.message)
-        } else {
           console.log(`[ChatStorage] Chat persisted for ${phoneNumber}`)
+        } catch (error) {
+          console.error('[ChatStorage] Error persisting chat:', error)
         }
       }
 
@@ -121,7 +118,7 @@ export class ChatStorage {
   }
 
   /**
-   * Get conversation history for a phone number (in-memory with Supabase fallback)
+   * Get conversation history for a phone number (in-memory with Convex fallback)
    */
   static async getConversationHistory(
     phoneNumber: string,
@@ -133,7 +130,7 @@ export class ChatStorage {
 
       const all = messagesByPhone.get(sanitizedPhone) || []
       const currentSession = sessionByPhone.get(sanitizedPhone)
-      
+
       // If we have in-memory messages, use those
       if (all.length > 0) {
         const filtered = currentSession
@@ -142,34 +139,36 @@ export class ChatStorage {
         return filtered.slice(-limit)
       }
 
-      // Fallback: Load from Supabase if in-memory is empty (e.g., after restart)
-      if (supabase) {
-        const { data: chats, error } = await supabase
-          .from('sms_chats')
-          .select('*')
-          .eq('phone_number', sanitizedPhone)
-          .order('created_at', { ascending: true })
-          .limit(limit)
+      // Fallback: Load from Convex if in-memory is empty (e.g., after cold start)
+      if (convex) {
+        try {
+          const chats = await convex.query(api.chats.history, {
+            phoneNumber: sanitizedPhone,
+            limit,
+          })
 
-        if (!error && chats && chats.length > 0) {
-          console.log(`[ChatStorage] Loaded ${chats.length} messages from Supabase for ${sanitizedPhone}`)
-          
-          const messages: ChatMessage[] = chats.map((chat: any) => ({
-            id: chat.id,
-            phone_number: sanitizedPhone,
-            session_id: chat.session_id,
-            role: chat.role as 'user' | 'assistant',
-            message: chat.message,
-            created_at: chat.created_at
-          }))
+          if (chats && chats.length > 0) {
+            console.log(`[ChatStorage] Loaded ${chats.length} messages from Convex for ${sanitizedPhone}`)
 
-          messagesByPhone.set(sanitizedPhone, messages)
-          
-          if (messages.length > 0) {
-            sessionByPhone.set(sanitizedPhone, messages[messages.length - 1].session_id)
+            const messages: ChatMessage[] = chats.map((chat: any) => ({
+              id: chat._id,
+              phone_number: sanitizedPhone,
+              session_id: chat.sessionId,
+              role: chat.role as 'user' | 'assistant',
+              message: chat.message,
+              created_at: new Date(chat._creationTime).toISOString()
+            }))
+
+            messagesByPhone.set(sanitizedPhone, messages)
+
+            if (messages.length > 0) {
+              sessionByPhone.set(sanitizedPhone, messages[messages.length - 1].session_id)
+            }
+
+            return messages
           }
-
-          return messages
+        } catch (error) {
+          console.error('[ChatStorage] Error loading history from Convex:', error)
         }
       }
 
@@ -197,25 +196,5 @@ export class ChatStorage {
     const sessionId = uuidv4()
     sessionByPhone.set(phoneNumber, sessionId)
     return sessionId
-  }
-
-  /**
-   * Get user memories from database
-   */
-  static async getUserMemories(phoneNumber: string): Promise<Array<{ memory_content: string, memory_type: string, importance: number }>> {
-    if (!phoneNumber) return []
-    
-    const { data, error } = await supabase
-      .from('user_memories')
-      .select('memory_content, memory_type, importance')
-      .eq('phone_number', phoneNumber)
-      .order('importance', { ascending: false })
-    
-    if (error) {
-      console.error('Error fetching memories:', error)
-      return []
-    }
-    
-    return data || []
   }
 }

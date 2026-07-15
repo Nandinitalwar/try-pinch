@@ -1,5 +1,9 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
-import { supabase } from './supabase'
+// User memory via Mem0 (https://docs.mem0.ai)
+// Mem0 handles extraction, deduplication, and semantic retrieval server-side:
+// we send raw conversation turns, it decides what's worth remembering.
+//
+// Keeps the SimpleMemorySystem class name/interface so webhook routes and the
+// agent pipeline work unchanged from the old homegrown implementation.
 
 export interface SimpleMemory {
   id?: string
@@ -10,185 +14,121 @@ export interface SimpleMemory {
   created_at?: string
 }
 
+const MEM0_BASE_URL = 'https://api.mem0.ai/v1'
+
+function mem0Key(): string | null {
+  const key = process.env.MEM0_API_KEY?.trim()
+  return key || null
+}
+
+async function mem0Fetch(path: string, init: RequestInit = {}): Promise<any> {
+  const key = mem0Key()
+  if (!key) {
+    console.error('[Memory] MEM0_API_KEY not configured')
+    return null
+  }
+
+  const response = await fetch(`${MEM0_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      'Authorization': `Token ${key}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  })
+
+  const text = await response.text()
+  if (!response.ok) {
+    console.error(`[Memory] Mem0 ${init.method || 'GET'} ${path} failed (${response.status}):`, text.substring(0, 300))
+    return null
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
 export class SimpleMemorySystem {
-  private genAI: GoogleGenerativeAI
-  private model: any
+  /**
+   * Send a conversation turn to Mem0 - it extracts and stores memorable
+   * facts server-side (preferences, relationships, plans, etc).
+   * Returns the extracted memories (may be empty if nothing was memorable).
+   */
+  async extractMemories(userMessage: string, agentResponse: string, phoneNumber?: string): Promise<SimpleMemory[]> {
+    // Without a phone number we can't attribute memories to a user;
+    // actual storage happens in storeMemories which has the number.
+    this.pendingTurn = { userMessage, agentResponse }
+    return [{
+      phone_number: phoneNumber || '',
+      memory_content: userMessage,
+      memory_type: 'conversation',
+      importance: 5,
+    }]
+  }
 
-  constructor() {
-    const rawKey = process.env.GOOGLE_AI_API_KEY
-    const apiKey = rawKey?.trim().replace(/^['"]|['"]$/g, '') || ''
-    
-    if (!apiKey) {
-      throw new Error('GOOGLE_AI_API_KEY is not configured')
+  private pendingTurn: { userMessage: string; agentResponse: string } | null = null
+
+  /**
+   * Store the buffered conversation turn in Mem0 for this user.
+   * Mem0 decides what facts to extract and deduplicates against
+   * existing memories automatically.
+   */
+  async storeMemories(phoneNumber: string, _memories: SimpleMemory[]): Promise<boolean> {
+    if (!this.pendingTurn) {
+      console.log('[Memory] No pending conversation turn to store')
+      return false
     }
-    
-    this.genAI = new GoogleGenerativeAI(apiKey)
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+    const { userMessage, agentResponse } = this.pendingTurn
+    this.pendingTurn = null
+
+    const result = await mem0Fetch('/memories/', {
+      method: 'POST',
+      body: JSON.stringify({
+        messages: [
+          { role: 'user', content: userMessage },
+          { role: 'assistant', content: agentResponse },
+        ],
+        user_id: phoneNumber,
+      }),
+    })
+
+    if (result === null) return false
+
+    const extracted = Array.isArray(result) ? result : result.results || []
+    console.log(`[Memory] Mem0 processed turn for ${phoneNumber}: ${extracted.length} memory operation(s)`)
+    return true
   }
 
   /**
-   * Extract simple memorable facts from conversation
+   * Retrieve memories for a user. When a query is provided, uses Mem0's
+   * semantic search to return the most relevant memories; otherwise
+   * returns the most recent ones.
    */
-  async extractMemories(userMessage: string, agentResponse: string): Promise<SimpleMemory[]> {
-    try {
-      const prompt = `Extract memorable facts about this user from their message. Focus on:
-- Preferences (likes/dislikes)
-- Relationships (family, friends, pets, romantic interests)
-- Lifestyle (job, hobbies, living situation)
-- Personal details (name, location, important facts)
-- Upcoming plans and events (dates, trips, interviews, meetings — ALWAYS extract these with high importance so we can follow up later)
+  async getMemories(phoneNumber: string, limit: number = 10, query?: string): Promise<SimpleMemory[]> {
+    let items: any[] = []
 
-Only extract things that would be useful to remember in future conversations. Upcoming plans are VERY important — we want to follow up on them later (e.g. "how was your date with Ram?").
-
-User message: "${userMessage}"
-
-Return as JSON array:
-[
-  {
-    "memory_content": "hates pineapple pizza",
-    "memory_type": "preference",
-    "importance": 7
-  }
-]
-
-Types: preference, relationship, lifestyle, personal, event, other
-Importance: 1-10 (higher = more important)
-- Upcoming plans/events should ALWAYS be importance 9-10
-- Relationships (who they're dating, friends, family) should be importance 8-9
-- Preferences should be importance 6-8`
-
-      const result = await this.model.generateContent({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens: 2000,
-          temperature: 0.3,
-        }
+    if (query) {
+      const result = await mem0Fetch('/memories/search/', {
+        method: 'POST',
+        body: JSON.stringify({ query, user_id: phoneNumber, limit }),
       })
-
-      const response = result.response.text()
-      console.log('[SimpleMemory] Raw AI response:', response)
-      
-      let cleanedResponse = response.trim()
-      
-      // Clean JSON markers
-      if (cleanedResponse.startsWith('```json')) {
-        cleanedResponse = cleanedResponse.replace(/```json\s*\n?/, '').replace(/\n?\s*```$/, '')
-      }
-      if (cleanedResponse.startsWith('```')) {
-        cleanedResponse = cleanedResponse.replace(/```\s*\n?/, '').replace(/\n?\s*```$/, '')
-      }
-      
-      // Handle cases where AI returns text before JSON or truncated JSON
-      const jsonStart = cleanedResponse.indexOf('[')
-      let jsonEnd = cleanedResponse.lastIndexOf(']')
-      
-      if (jsonStart !== -1) {
-        if (jsonEnd === -1 || jsonEnd < jsonStart) {
-          // JSON is truncated, try to repair it
-          cleanedResponse = repairTruncatedJSON(cleanedResponse, jsonStart)
-        } else {
-          cleanedResponse = cleanedResponse.substring(jsonStart, jsonEnd + 1)
-        }
-      }
-      
-      console.log('[SimpleMemory] Cleaned response for parsing:', cleanedResponse)
-
-      try {
-        const memories = JSON.parse(cleanedResponse) as SimpleMemory[]
-        const validMemories = memories.filter(m => m.memory_content && m.importance >= 5)
-        console.log('[SimpleMemory] Parsed memories:', validMemories)
-        return validMemories
-      } catch (parseError) {
-        console.error('[SimpleMemory] JSON parse failed:', parseError)
-        console.error('[SimpleMemory] Failed to parse:', cleanedResponse)
-        // Return empty array on parse failure instead of crashing
-        return []
-      }
-      
-    } catch (error) {
-      console.error('Memory extraction error:', error)
-      return []
-    }
-  }
-
-  /**
-   * Store memories in Supabase
-   */
-  async storeMemories(phoneNumber: string, memories: SimpleMemory[]): Promise<boolean> {
-    if (!supabase) {
-      console.error('[SimpleMemory] Supabase not configured')
-      return false
-    }
-    
-    if (memories.length === 0) {
-      console.log('[SimpleMemory] No memories to store')
-      return false
+      items = (Array.isArray(result) ? result : result?.results) || []
+    } else {
+      const result = await mem0Fetch(`/memories/?user_id=${encodeURIComponent(phoneNumber)}`)
+      items = ((Array.isArray(result) ? result : result?.results) || []).slice(0, limit)
     }
 
-    console.log(`[SimpleMemory] Attempting to store ${memories.length} memories for ${phoneNumber}`)
-    console.log('[SimpleMemory] Memories to store:', memories)
-
-    try {
-      for (const memory of memories) {
-        console.log(`[SimpleMemory] Storing memory:`, memory)
-        
-        const { data, error } = await supabase
-          .from('user_memories')
-          .upsert({
-            phone_number: phoneNumber,
-            memory_content: memory.memory_content,
-            memory_type: memory.memory_type,
-            importance: memory.importance
-          }, {
-            onConflict: 'phone_number,memory_content',
-            ignoreDuplicates: false
-          })
-          .select()
-        
-        if (error) {
-          console.error(`[SimpleMemory] Error storing memory:`, error)
-          console.error(`[SimpleMemory] Failed memory:`, memory)
-        } else {
-          console.log(`[SimpleMemory] Successfully stored:`, data)
-        }
-      }
-
-      console.log(`[SimpleMemory] Finished storing memories for ${phoneNumber}`)
-      return true
-      
-    } catch (error) {
-      console.error('[SimpleMemory] Storage error:', error)
-      return false
-    }
-  }
-
-  /**
-   * Get relevant memories for context
-   */
-  async getMemories(phoneNumber: string, limit: number = 10): Promise<SimpleMemory[]> {
-    if (!supabase) return []
-
-    try {
-      const { data, error } = await supabase
-        .from('user_memories')
-        .select('*')
-        .eq('phone_number', phoneNumber)
-        .gte('importance', 5) // only important memories
-        .order('importance', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(limit)
-
-      if (error) {
-        console.error('Memory retrieval error:', error)
-        return []
-      }
-
-      return data as SimpleMemory[]
-      
-    } catch (error) {
-      console.error('Memory retrieval error:', error)
-      return []
-    }
+    return items.map((m: any) => ({
+      id: m.id,
+      phone_number: phoneNumber,
+      memory_content: m.memory || m.text || '',
+      memory_type: m.categories?.[0] || 'general',
+      importance: typeof m.score === 'number' ? Math.round(m.score * 10) : 7,
+      created_at: m.created_at,
+    })).filter(m => m.memory_content)
   }
 
   /**
@@ -200,75 +140,9 @@ Importance: 1-10 (higher = more important)
     }
 
     let context = "What you remember about this user:\n"
-    
-    const groups: Record<string, SimpleMemory[]> = {}
-    memories.forEach(memory => {
-      if (!groups[memory.memory_type]) groups[memory.memory_type] = []
-      groups[memory.memory_type].push(memory)
-    })
-
-    Object.entries(groups).forEach(([type, mems]) => {
-      context += `\n${type.toUpperCase()}:\n`
-      mems.forEach(mem => {
-        context += `- ${mem.memory_content}\n`
-      })
-    })
-
+    for (const mem of memories) {
+      context += `- ${mem.memory_content}\n`
+    }
     return context
-  }
-}
-
-// Helper function to repair truncated JSON from Gemini API
-function repairTruncatedJSON(text: string, jsonStart: number): string {
-  const jsonText = text.substring(jsonStart)
-  
-  // Find all complete objects by looking for balanced braces
-  const objects: string[] = []
-  let depth = 0
-  let inString = false
-  let objectStart = -1
-  let currentObject = ''
-  
-  for (let i = 0; i < jsonText.length; i++) {
-    const char = jsonText[i]
-    const prevChar = i > 0 ? jsonText[i - 1] : ''
-    
-    // Handle string boundaries (ignore escaped quotes)
-    if (char === '"' && prevChar !== '\\') {
-      inString = !inString
-    }
-    
-    if (!inString) {
-      if (char === '{') {
-        if (depth === 0) {
-          objectStart = i
-          currentObject = ''
-        }
-        depth++
-      } else if (char === '}') {
-        depth--
-        if (depth === 0 && objectStart !== -1) {
-          currentObject = jsonText.substring(objectStart, i + 1)
-          
-          // Validate that this is a complete, parseable object
-          try {
-            JSON.parse(currentObject)
-            objects.push(currentObject)
-          } catch {
-            // Skip invalid objects
-          }
-          
-          objectStart = -1
-          currentObject = ''
-        }
-      }
-    }
-  }
-  
-  // Return array of valid objects, or empty array if none found
-  if (objects.length > 0) {
-    return '[' + objects.join(',') + ']'
-  } else {
-    return '[]'
   }
 }

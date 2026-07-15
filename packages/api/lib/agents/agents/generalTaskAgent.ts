@@ -5,6 +5,7 @@ import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
 import { BirthDataParser, BirthData } from '../../birthDataParser'
 import { UserProfileService } from '../../userProfile'
 import { SimpleMemorySystem } from '../../simpleMemory'
+import { logLLMCall, logToolCall } from '../../braintrust'
 
 // Tool definitions for Gemini (cast to any to work around strict typing)
 const tools: any = [
@@ -191,12 +192,27 @@ export class GeneralTaskAgent extends ExecutionAgent {
     const { name, args } = functionCall
     console.log(`[GeneralTaskAgent] Tool call: ${name}`, args)
 
+    const startTime = Date.now()
+
     if (name === 'search_web') {
       const query = args.query
       console.log(`[GeneralTaskAgent] Searching web for: ${query}`)
       const results = await this.searchWeb(query)
-      return { 
-        success: true, 
+
+      // Log tool call to Braintrust
+      logToolCall({
+        name: 'search_web',
+        input: { query },
+        output: { results },
+        metadata: {
+          latency_ms: Date.now() - startTime,
+          user_id: this.context.userId,
+          phone_number: this.context.phoneNumber,
+        }
+      })
+
+      return {
+        success: true,
         results: results,
         instruction: 'Use these search results to give the user specific, actionable recommendations. Cite specific events, venues, or details from the results.'
       }
@@ -220,10 +236,22 @@ export class GeneralTaskAgent extends ExecutionAgent {
 
       console.log('[GeneralTaskAgent] Saving birth data via tool call:', birthData)
       const saved = await BirthDataParser.saveBirthData(this.context.phoneNumber, birthData)
-      
-      return { 
-        success: saved, 
-        message: saved 
+
+      // Log tool call to Braintrust
+      logToolCall({
+        name: 'save_birth_data',
+        input: args,
+        output: { success: saved },
+        metadata: {
+          latency_ms: Date.now() - startTime,
+          user_id: this.context.userId,
+          phone_number: this.context.phoneNumber,
+        }
+      })
+
+      return {
+        success: saved,
+        message: saved
           ? 'Birth data saved. Now provide the user with a personalized response based on their chart. Do not say you will look into it - give them actual insights now.'
           : 'Failed to save birth data'
       }
@@ -578,20 +606,23 @@ Warm and witty when chatting, but always authoritative. You KNOW things. You don
       })
 
       this.log(`Sending request to Gemini API (${history.length} messages)`)
-      
+
       // Log conversation history for debugging
       console.log('[GeneralTaskAgent] Conversation history being sent:')
       history.forEach((msg, i) => {
         console.log(`  ${i + 1}. ${msg.role}: "${msg.parts[0].text}"`)
       })
-      
+
       console.log('[GeneralTaskAgent] System prompt:', systemPrompt.substring(0, 100) + '...')
       console.log('[GeneralTaskAgent] Current task:', this.task)
+
+      // Track LLM call timing
+      const llmStartTime = Date.now()
 
       // Use chat for tool calling support
       // systemInstruction must be in parts format: { parts: [{ text: "..." }] }
       const systemInstruction = { parts: [{ text: systemPrompt }] }
-      
+
       const chat = this.model.startChat({
         systemInstruction: systemInstruction,
         history: history.slice(0, -1), // All but last message
@@ -600,7 +631,7 @@ Warm and witty when chatting, but always authoritative. You KNOW things. You don
           temperature: 1,
         }
       })
-      
+
       let result = await chat.sendMessage(history[history.length - 1].parts[0].text)
       let response = result.response
       

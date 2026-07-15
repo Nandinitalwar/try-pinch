@@ -1,7 +1,12 @@
-# Pinch - SMS AI Astrologer
+# Pinch - SMS/iMessage AI Astrologer
 
 ## Project Overview
-SMS-based AI astrologer using Twilio webhooks + Google Gemini 2.5 Flash. Next.js 14 App Router deployed on Vercel.
+SMS and iMessage-based AI astrologer using:
+- **Twilio** for SMS webhooks
+- **SendBlue** for iMessage support
+- **Google Gemini 2.5 Flash** for AI responses
+- **Braintrust** for AI observability
+- Next.js 14 App Router deployed on Vercel
 
 ## Key Commands
 - `npm run dev` - Start local dev server (port 3000)
@@ -19,16 +24,33 @@ curl -X POST "http://localhost:3000/api/webhook/twilio" \
 ```
 
 ## Architecture
-- `/app/api/webhook/twilio/route.ts` - Main Twilio webhook handler
+- `/app/api/webhook/twilio/route.ts` - Twilio SMS webhook handler
+- `/app/api/webhook/sendblue/route.ts` - SendBlue iMessage webhook handler
 - `/lib/agents/agents/generalTaskAgent.ts` - Core AI agent with Gemini + tools
 - `/lib/agents/taskDecomposer.ts` - Routes messages to appropriate agents
+- `/lib/sendblue.ts` - SendBlue API client for iMessage
+- `/lib/messagingService.ts` - Unified messaging service (SMS + iMessage)
+- `/lib/braintrust.ts` - Braintrust observability integration
 
 ## Environment Variables
 Required in `.env.local` and Vercel:
-- `GOOGLE_AI_API_KEY` - Gemini API
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` - Twilio
+
+### AI & Search
+- `GOOGLE_AI_API_KEY` - Gemini API key
 - `EXA_API_KEY` - Web search via Exa AI
-- Supabase keys for user storage
+
+### Messaging
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` - Twilio SMS
+- `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET_KEY`, `SENDBLUE_FROM_NUMBER` - SendBlue iMessage
+
+### Database
+- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anon key
+- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key
+
+### Observability
+- `BRAINTRUST_API_KEY` - Braintrust AI observability (get from https://www.braintrust.dev)
+- `BRAINTRUST_PARENT` - Braintrust project name (e.g., `project_name:pinch-sms-astrologer`)
 
 ## Conventions
 - System prompts live in `generalTaskAgent.ts`

@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { convex, api } from './convexClient'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export interface BirthData {
@@ -189,37 +189,27 @@ If no birth information is found, return: {"no_birth_data": true}`
   }
   
   static async saveBirthData(phoneNumber: string, birthData: BirthData): Promise<boolean> {
-    if (!supabase) {
-      console.error('Supabase not configured')
+    if (!convex) {
+      console.error('Convex not configured')
       return false
     }
-    
+
     try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .upsert({
-          phone_number: phoneNumber,
-          preferred_name: birthData.name,
-          birth_date: birthData.birth_date,
-          birth_time: birthData.birth_time,
-          birth_time_known: birthData.birth_time_known,
-          birth_time_accuracy: birthData.birth_time_accuracy,
-          birth_timezone: birthData.birth_timezone,
-          birth_city: birthData.birth_city,
-          birth_country: birthData.birth_country,
-          birth_latitude: birthData.birth_latitude,
-          birth_longitude: birthData.birth_longitude,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'phone_number'
-        })
-      
-      if (error) {
-        console.error('Error saving birth data to Supabase:', error)
-        return false
-      }
-      
-      console.log('Birth data saved successfully:', data)
+      await convex.mutation(api.profiles.upsert, {
+        phoneNumber,
+        preferredName: birthData.name,
+        birthDate: birthData.birth_date,
+        birthTime: birthData.birth_time,
+        birthTimeKnown: birthData.birth_time_known,
+        birthTimeAccuracy: birthData.birth_time_accuracy,
+        birthTimezone: birthData.birth_timezone,
+        birthCity: birthData.birth_city,
+        birthCountry: birthData.birth_country,
+        birthLatitude: birthData.birth_latitude,
+        birthLongitude: birthData.birth_longitude,
+      })
+
+      console.log('Birth data saved successfully for', phoneNumber)
       return true
     } catch (error) {
       console.error('Error saving birth data:', error)

@@ -1,7 +1,7 @@
 # 🔮 Pinch
 
-> **Your AI astrologer, right in your texts.**  
-> No apps. No accounts. Just WhatsApp and real talk about your chart.
+> **Your AI astrologer, right in your texts.**
+> No apps. No accounts. Just SMS/iMessage and real talk about your chart.
 
 <div align="center">
 
@@ -15,7 +15,7 @@
 
 ## What is Pinch?
 
-Pinch is an AI astrologer that lives in your WhatsApp messages. Text it anything — *"should I take this job?"*, *"what should I eat for dinner?"*, *"how do I deal with my boss?"* — and get advice rooted in your birth chart and personality.
+Pinch is an AI astrologer that lives in your text messages (SMS or iMessage). Text it anything — *"should I take this job?"*, *"what should I eat for dinner?"*, *"how do I deal with my boss?"* — and get advice rooted in your birth chart and personality.
 
 **No mystical jargon. No vague horoscopes. Just direct, personality-driven guidance from someone who actually knows you.**
 
@@ -25,6 +25,8 @@ Pinch is an AI astrologer that lives in your WhatsApp messages. Text it anything
 - **Conversational memory** — Remembers your previous chats, your preferences, your life
 - **Real-time insights** — Searches today's astrology forecasts to inform recommendations
 - **Zero friction** — No app downloads, no logins. Just text a number.
+- **iMessage + SMS support** — Works on both iPhone (iMessage) and any phone (SMS via Twilio)
+- **AI observability** — Full Braintrust integration for monitoring AI performance
 - **Blunt and direct** — Talks like a friend, not a corporate wellness bot
 
 ---
@@ -46,8 +48,8 @@ Pinch is an AI astrologer that lives in your WhatsApp messages. Text it anything
 
 ```
 ┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-│   WhatsApp   │────────▶│   Twilio     │────────▶│   Next.js    │
-│   Message    │         │   Webhook    │         │   API Route  │
+│   iMessage   │────────▶│   SendBlue   │────────▶│   Next.js    │
+│   or SMS     │         │   or Twilio  │         │   Webhooks   │
 └──────────────┘         └──────────────┘         └──────┬───────┘
                                                           │
                          ┌────────────────────────────────▼────────┐
@@ -61,9 +63,11 @@ Pinch is an AI astrologer that lives in your WhatsApp messages. Text it anything
                          │  │  General Task Agent              │  │
                          │  │  • Loads user profile + chart    │  │
                          │  │  • Loads conversation history    │  │
+                         │  │  • Loads user memories           │  │
                          │  │  • Searches web for today's      │  │
                          │  │    astrology (via Exa AI)        │  │
                          │  │  • Calls Gemini 2.5 Flash        │  │
+                         │  │  • Logs to Braintrust            │  │
                          │  └──────────────┬───────────────────┘  │
                          └─────────────────┼──────────────────────┘
                                            │
@@ -75,7 +79,7 @@ Pinch is an AI astrologer that lives in your WhatsApp messages. Text it anything
                          └─────────────────┬──────────────────┘
                                            │
                          ┌─────────────────▼──────────────────┐
-                         │  Response (TwiML)                  │
+                         │  Response via SendBlue/Twilio      │
                          │  ──────────────────────▶ WhatsApp  │
                          └────────────────────────────────────┘
 ```

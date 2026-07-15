@@ -11,6 +11,12 @@
     "app/api/webhook/twilio/route.ts": {
       "maxDuration": 30
     },
+    "app/api/webhook/blooio/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/webhook/sendblue/route.ts": {
+      "maxDuration": 30
+    },
     "app/api/astrology-data/route.ts": {
       "maxDuration": 10
     },

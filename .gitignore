@@ -7,7 +7,7 @@ node_modules/
 /coverage
 
 # Next.js
-/.next/
+.next/
 /out/
 
 # Production
@@ -25,11 +25,15 @@ yarn-error.log*
 # Local env files
 .env*.local
 .env
+.env.production
 
 # Vercel
 .vercel
 
 # TypeScript
 *.tsbuildinfo
-next-env.d.ts packages/api/.next/
-packages/website/.next/
+next-env.d.ts
+
+# Local conversation/log artifacts
+*-conversation-*.json
+*-conversation-*.txt

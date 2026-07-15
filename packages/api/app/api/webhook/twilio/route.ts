@@ -5,6 +5,7 @@ import { InteractionAgent } from '@/lib/agents/interactionAgent'
 import { UserProfileService } from '@/lib/userProfile'
 import { SimpleMemorySystem } from '@/lib/simpleMemory'
 import { bufferMessage } from '@/lib/messageBuffer'
+import { startConversationSpan, flushBraintrust } from '@/lib/braintrust'
 
 const WHATSAPP_CHAR_LIMIT = 950  // WhatsApp limit is 1024, leave buffer for XML escaping
 
@@ -117,31 +118,45 @@ export async function POST(request: NextRequest) {
     
     // This is the first message - wait for the buffer to complete
     const combinedMessage = await bufferResult.promise
-    
+
     console.log(`[${fromNumber}] Processing combined message: "${combinedMessage.substring(0, 100)}${combinedMessage.length > 100 ? '...' : ''}"`)
-    
+
+    // Start Braintrust conversation span for observability
+    const conversationStartTime = Date.now()
+    const conversationSpan = startConversationSpan({
+      name: 'sms_conversation',
+      phoneNumber: fromNumber,
+      userId: '', // Will be updated after we get userId
+      metadata: {
+        message_preview: combinedMessage.substring(0, 100),
+        message_length: combinedMessage.length,
+      }
+    })
+
     // Get or create user
     const userId = await ChatStorage.getOrCreateUser(fromNumber)
     if (!userId) {
+      conversationSpan?.end()
       return NextResponse.json({ error: 'Failed to identify user' }, { status: 500 })
     }
-    
+
     // Load conversation history
     const history = ChatStorage.formatForOpenAI(
       await ChatStorage.getConversationHistory(fromNumber, 10)
     )
     console.log(`[${fromNumber}] History count: ${history.length}`, history.length > 0 ? history : '(new user)')
-    
+
     // Save user message (save the combined message)
     await ChatStorage.saveMessage(userId, 'user', combinedMessage, undefined, { identifierIsUserId: true })
-    
+
     // Load user profile and memories for context
     const userProfile = await UserProfileService.getUserProfile(fromNumber)
     const memorySystem = new SimpleMemorySystem()
     const userMemories = await memorySystem.getMemories(fromNumber)
-    
+
     // Use InteractionAgent (which uses GeneralTaskAgent with tool calling)
     let aiResponse: string
+    let agentError: string | undefined
     try {
       const agent = new InteractionAgent({
         userId,
@@ -150,15 +165,34 @@ export async function POST(request: NextRequest) {
         userProfile: userProfile ?? undefined,
         userMemories
       })
-      
+
       aiResponse = await agent.processMessage(combinedMessage)
     } catch (error) {
       console.error('Agent error:', error)
       if (error instanceof Error) {
         console.error('Error message:', error.message)
         console.error('Error stack:', error.stack)
+        agentError = error.message
       }
       aiResponse = 'I am having trouble right now. Please try again in a moment.'
+    }
+
+    // End conversation span with metrics
+    if (conversationSpan) {
+      conversationSpan.log({
+        input: combinedMessage,
+        output: aiResponse,
+        metadata: {
+          user_id: userId,
+          phone_number: fromNumber,
+          history_length: history.length,
+          has_profile: !!userProfile,
+          memory_count: userMemories.length,
+          latency_ms: Date.now() - conversationStartTime,
+        },
+        error: agentError,
+      })
+      conversationSpan.end()
     }
     
     // Save AI response (non-blocking)
@@ -182,6 +216,9 @@ export async function POST(request: NextRequest) {
         } catch (error) {
           console.error(`[${fromNumber}] Memory extraction/storage error:`, error)
         }
+
+        // Flush Braintrust logs in background
+        await flushBraintrust()
       })()
     )
 
