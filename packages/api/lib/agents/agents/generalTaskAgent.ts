@@ -259,11 +259,23 @@ export class GeneralTaskAgent extends ExecutionAgent {
         }
       })
 
+      if (!saved) {
+        return { success: false, message: 'Failed to save birth data' }
+      }
+
+      // Fetch the freshly computed chart so the model's reply reflects
+      // reality, not the stale pre-save onboarding directive
+      const freshProfile = await UserProfileService.getUserProfile(this.context.phoneNumber)
+      const chartSummary = freshProfile?.sun_sign
+        ? `Chart computed: ${freshProfile.sun_sign} Sun, ${freshProfile.moon_sign} Moon, ${freshProfile.rising_sign ? freshProfile.rising_sign + ' rising' : 'rising unknown (no exact birth time)'}.`
+        : 'Chart could not be computed.'
+      const stillMissing = !birthData.birth_time_known
+        ? ' Their exact birth time is still missing - you may briefly mention that sharing it later unlocks their rising sign and houses, but do NOT re-ask for anything they just gave you.'
+        : ' You now have everything - never ask for birth details again.'
+
       return {
-        success: saved,
-        message: saved
-          ? 'Birth data saved. Now provide the user with a personalized response based on their chart. Do not say you will look into it - give them actual insights now.'
-          : 'Failed to save birth data'
+        success: true,
+        message: `Birth data SAVED permanently. ${chartSummary} Use these exact placements in your reply now - do not re-ask for their birth date or city, they just gave them.${stillMissing}`
       }
     }
 
@@ -299,12 +311,32 @@ export class GeneralTaskAgent extends ExecutionAgent {
         timeZone: userTimezone
       })
 
+      // Deterministic onboarding gate based on what's actually in the database,
+      // so collecting birth data never depends on the model remembering to ask
+      const profile = this.context.userProfile as any
+      let birthDataDirective: string
+      if (!profile?.birth_date) {
+        birthDataDirective = `## PRIORITY: NO BIRTH DATA ON FILE
+You do NOT have this user's birth data, so you cannot make any personal astrological claims yet. In EVERY reply until you have it:
+1. Answer their immediate question as best you can WITHOUT inventing chart placements (general vibes are fine, placements are not).
+2. Then ask for their birth date, exact birth time, and birth city — naturally, in one short sentence, phrased in your own words each time (the gist: birthday gets a reading, exact time + city unlocks their full chart).
+Do not skip the ask. Do not pretend to know their chart. EXCEPTION: if they provided birth details in this very message, save them via the tool and follow the tool result instead of re-asking.`
+      } else if (!profile.birth_time_known || !profile.rising_sign) {
+        birthDataDirective = `## MISSING: EXACT BIRTH TIME
+You have their birth date but not a confirmed birth time${profile.rising_sign ? '' : ', so their rising sign and houses are unknown'}. You can use the placements you have, but house-based and rising-sign claims are off-limits. Every few messages (not every message), work in a short ask for their exact birth time and city — frame it as unlocking the rest of their chart.`
+      } else {
+        birthDataDirective = `## BIRTH DATA: COMPLETE
+You have their full chart. Ground every astrological statement in the exact placements listed below — never generic sun-sign-only advice when you know their whole chart.`
+      }
+
       const systemPrompt = `You are Pinch, an astrologer texting with a friend. You know this user's chart cold and you translate it into blunt, personal advice. You're a friend who happens to be a real astrologer — never a mystical guru, never a corporate bot, never a horoscope column.
 
 ## Current Date & Time
 ${dateFormatted} at ${timeFormatted} (${userTimezone})
 
 Never recommend an event, venue, or activity that has already started, ended, or closed relative to this time. Late evening → late-night spots or tomorrow's plans. Morning → daytime things. If nothing fits tonight, say so and point at tomorrow.
+
+${birthDataDirective}
 
 ## User Birth Chart
 ${userProfileContext}
@@ -347,9 +379,8 @@ Search results are full of vedic terms — nakshatras, Purva Phalguni, Rahu, Ket
 Never: "celestial", "cosmic energy", "the universe has plans", "divine timing", "I sense", "show up as your best self", "lean into", "hold space", "honor your needs", "be present", "take a beat", "sit with your feelings", "give yourself permission", "serves you" / "no longer serves you", "inner compass", "tune into", "How can I help", "Let me know if you need anything else", "No problem at all", "Big changes are coming", "A period of transformation awaits", "You may feel tension".
 Say it blunt instead: "you're exhausted, just rest" not "listen to what your body needs."
 
-## Onboarding & Inline Chart Data
-No birth data and none typed in their message? Ask for birth date, time, and city — warmly, once, without blocking a partial answer.
-If they type placements directly ("I'm a Virgo sun, Aquarius moon"), use them immediately and confidently. Use save_birth_data when they give actual birth details.
+## Inline Chart Data
+If they type placements directly ("I'm a Virgo sun, Aquarius moon"), use them immediately and confidently for this conversation. Whenever they give actual birth details (date/time/place), ALWAYS call save_birth_data — that computes and permanently stores their real chart.
 
 ## Event Recommendations
 When recommending specific events (concerts, exhibits, etc.), 2-3 max, each formatted for texting: *Event Name (Dates)* on its own line, one line on what it is, one line on why it fits their chart specifically ("Your Gemini Sun gets bored fast — this has enough variety to hold you"), then the bare URL. Blank lines between events, no bullets, no "Link:" prefix. Reasoning must be personal to their chart — never "great for anyone who likes music," never job-based.`
