@@ -13,6 +13,7 @@ import { ActivationReplyStage, checkActivationReply, checkVoice, checkRepetition
 import { recordExample, trainingGroupId } from '../../trainingData'
 import { isPersonalHoroscopeRequest } from '../../horoscopeIntent'
 import { createReplyClient, getReplyProviderRequestOptions, ReplyProvider, ReplyReasoningEffort, resolveReplyProviderConfig } from '../../replyProvider'
+import { createTask, listTasks, transitionTask } from '../../tasks'
 
 // Keep tool execution inside Pinch. The reply model only decides when to call these
 // functions and receives their JSON results; it never gets database credentials.
@@ -123,6 +124,45 @@ const tools: OpenAI.Responses.FunctionTool[] = [
         },
       },
       required: ['name'],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: 'function',
+    name: 'create_task',
+    strict: true,
+    description: "Create a durable task only when the user explicitly asks Pinch to remember, remind, schedule, or do something. Preserve the user's concrete wording. If a due time is ambiguous, ask one short clarification instead of guessing.",
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'The concrete delegated job, under 240 characters.' },
+        due_at: { type: ['string', 'null'], description: 'ISO 8601 timestamp with timezone, or null when no due time was requested.' },
+        recurrence: { type: ['string', 'null'], description: 'Plain recurrence such as daily or every Friday, or null.' },
+      },
+      required: ['title', 'due_at', 'recurrence'],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: 'function',
+    name: 'list_tasks',
+    strict: true,
+    description: 'List the tasks this user delegated to Pinch. Use when they ask what is pending or refer to a task without an ID.',
+    parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+  },
+  {
+    type: 'function',
+    name: 'update_task',
+    strict: true,
+    description: 'Complete, cancel, snooze, or resume a task. Call list_tasks first in the same turn when the user identifies it by words instead of an exact task ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Exact task ID returned by list_tasks.' },
+        status: { type: 'string', enum: ['pending', 'snoozed', 'completed', 'cancelled'] },
+        snooze_until: { type: ['string', 'null'], description: 'ISO 8601 timestamp with timezone when snoozing, otherwise null.' },
+      },
+      required: ['id', 'status', 'snooze_until'],
       additionalProperties: false,
     },
   },
@@ -263,6 +303,41 @@ export class GeneralTaskAgent extends ExecutionAgent {
     console.log(`[GeneralTaskAgent] Tool call: ${name}`, args)
 
     const startTime = Date.now()
+
+    if (name === 'create_task') {
+      if (!this.context.phoneNumber) return { success: false, error: 'No user identity available' }
+      try {
+        const task = await createTask({
+          phoneNumber: this.context.phoneNumber, title: args.title,
+          dueAt: args.due_at, recurrence: args.recurrence, source: 'agent',
+        })
+        logToolCall({ name, input: args, output: { success: true, task }, metadata: { latency_ms: Date.now() - startTime, user_id: this.context.userId } })
+        return { success: true, task }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'task creation failed' }
+      }
+    }
+
+    if (name === 'list_tasks') {
+      if (!this.context.phoneNumber) return { success: false, error: 'No user identity available' }
+      const tasks = await listTasks(this.context.phoneNumber)
+      logToolCall({ name, input: {}, output: { count: tasks.length }, metadata: { latency_ms: Date.now() - startTime, user_id: this.context.userId } })
+      return { success: true, tasks }
+    }
+
+    if (name === 'update_task') {
+      if (!this.context.phoneNumber) return { success: false, error: 'No user identity available' }
+      try {
+        const task = await transitionTask({
+          phoneNumber: this.context.phoneNumber, id: args.id,
+          status: args.status, snoozeUntil: args.snooze_until,
+        })
+        logToolCall({ name, input: args, output: { success: true, task }, metadata: { latency_ms: Date.now() - startTime, user_id: this.context.userId } })
+        return { success: true, task }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'task update failed' }
+      }
+    }
 
     if (name === 'search_web') {
       const query = args.query

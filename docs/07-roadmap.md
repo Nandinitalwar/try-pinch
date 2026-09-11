@@ -90,7 +90,7 @@ is explicitly experimental.
 | 1 | Make iMessage Linq-only | **Done 2026-08-14.** Alternate providers and runtime selection removed |
 | 2 | Multimodal replies and memory | **Done in code 2026-08-14.** Images/video become agent context; voice becomes durable user text. Live Linq device pass remains |
 | 3 | Memory test surface | **Available.** The web console shows extracted memories; add explicit source/importance explanations and correction/forget controls |
-| 4 | Reminder/to-do state machine | **In progress 2026-09-11.** Durable create/list/complete/cancel/snooze states, idempotent creation, API, and web inspection exist. Natural-language extraction, edit/recurrence, and delivery remain |
+| 4 | Reminder/to-do state machine | **In progress 2026-09-11.** Durable create/list/complete/cancel/snooze states, idempotent creation, model tools for messaging, API, and web inspection exist. Edit/recurrence execution and proactive delivery remain |
 | 5 | Consent, STOP, current city/timezone, chat health | Blocks all proactive sends and the morning brief |
 | 6 | Persistent execution worker + hourly scheduler | Wakes due tasks, retries safely, records results, and reports through Linq |
 | 7 | Gmail read-only private beta | Follows the permission and sync gates above; compose/send comes later |
