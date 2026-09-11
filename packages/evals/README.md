@@ -1,6 +1,12 @@
 # pinch-evals
 
-Behavioral evaluation suite for Pinch's system prompt. Catches regressions when the prompt is edited and compares behavior across model snapshots.
+> **Legacy model-comparison package.** Its Python prompt and linter are frozen copies and
+> are not the production release gate. They can drift from the TypeScript agent. Run
+> `cd ../api && npm run test:harness` for deterministic production checks, and
+> `npm run test:harness:live` with the API running for the real GPT-5.6 + Convex route.
+
+Behavioral model-comparison suite for a frozen Pinch prompt. Useful for experiments across
+model snapshots, but it does not by itself prove the shipped agent is clean.
 
 ## Why
 

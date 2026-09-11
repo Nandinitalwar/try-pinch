@@ -16,11 +16,62 @@ export interface UserProfile {
   moon_sign?: string
   rising_sign?: string
   chart_json?: string
+  chart_introduced_at?: string
   updated_at?: string
   created_at?: string
 }
 
+function normalizedNameText(value: string): string {
+  return Array.from(value.normalize('NFKC').toLowerCase())
+    .map(character => {
+      const isAsciiWord = /[a-z0-9]/.test(character)
+      const isLetter = character.toLocaleUpperCase() !== character.toLocaleLowerCase()
+      return isAsciiWord || isLetter || /[' -]/.test(character) ? character : ' '
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function hasLetterOrNumber(value: string): boolean {
+  return Array.from(value).some(character =>
+    /[a-z0-9]/i.test(character) ||
+    character.toLocaleUpperCase() !== character.toLocaleLowerCase()
+  )
+}
+
+/** Accept a name only when the newest user message actually claims it. */
+export function isExplicitPreferredName(latestMessage: string, proposedName: string): boolean {
+  const message = normalizedNameText(latestMessage)
+  const name = normalizedNameText(proposedName)
+  if (!message || !name || name.length > 80) return false
+  if (message === name) return true
+
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(
+    `(?:^|\\b)(?:i(?:'m| am)|my name is|call me|you can call me|it(?:'s| is))\\s+${escapedName}(?:\\b|$)|(?:^|\\b)${escapedName}\\s+(?:is fine|works|please)(?:\\b|$)`,
+    'i',
+  ).test(message)
+}
+
 export class UserProfileService {
+  static async savePreferredName(phoneNumber: string, name: string): Promise<boolean> {
+    if (!convex) return false
+
+    const preferredName = name.trim().replace(/\s+/g, ' ')
+    if (!preferredName || preferredName.length > 80 || !hasLetterOrNumber(preferredName)) {
+      return false
+    }
+
+    try {
+      await convex.mutation(api.profiles.upsert, { phoneNumber, preferredName })
+      return true
+    } catch (error) {
+      console.error('Error saving preferred name:', error)
+      return false
+    }
+  }
+
   static async getUserProfile(phoneNumber: string): Promise<UserProfile | null> {
     if (!convex) {
       console.error('Convex not configured')
@@ -52,12 +103,29 @@ export class UserProfileService {
         moon_sign: doc.moonSign,
         rising_sign: doc.risingSign,
         chart_json: doc.chartJson,
+        chart_introduced_at: doc.chartIntroducedAt
+          ? new Date(doc.chartIntroducedAt).toISOString()
+          : undefined,
         updated_at: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : undefined,
         created_at: new Date(doc._creationTime).toISOString(),
       }
     } catch (error) {
       console.error('Error fetching user profile:', error)
       return null
+    }
+  }
+
+  static async markChartIntroduced(phoneNumber: string): Promise<boolean> {
+    if (!convex) return false
+
+    try {
+      return await convex.mutation(api.profiles.markChartIntroduced, {
+        phoneNumber,
+        introducedAt: Date.now(),
+      })
+    } catch (error) {
+      console.error('Error marking chart introduced:', error)
+      return false
     }
   }
 
@@ -96,15 +164,30 @@ export class UserProfileService {
     if (profile.chart_json) {
       try {
         const chart = JSON.parse(profile.chart_json)
-        const lines = (chart.placements || []).map(
-          (p: any) => `  ${p.body}: ${p.sign} ${p.degree}°`
-        )
+        const moonAccuracy = chart.accuracy?.moon
+        const lines = (chart.placements || []).map((p: any) => {
+          if (p.body === 'Moon' && moonAccuracy?.certainty === 'sign-change-possible') {
+            return `  Moon: uncertain without a birth time; possible signs are ${moonAccuracy.possibleSigns.join(' or ')} (noon position: ${p.sign} ${p.degree}°)`
+          }
+          if (p.body === 'Moon' && moonAccuracy?.certainty === 'ambiguous-local-time') {
+            return `  Moon: local birth time is DST-ambiguous; sign possibilities are ${moonAccuracy.possibleSigns.join(' or ')} (first occurrence: ${p.sign} ${p.degree}°)`
+          }
+          return `  ${p.body}: ${p.sign} ${p.degree}°`
+        })
         if (chart.ascendant) {
           lines.push(`  Ascendant (Rising): ${chart.ascendant.sign} ${chart.ascendant.degree}°`)
+        } else if (chart.accuracy?.ascendant === 'ambiguous-local-time') {
+          const possible = (chart.accuracy.possibleAscendants || []).map(
+            (placement: any) => `${placement.sign} ${placement.degree}°`
+          )
+          lines.push(`  Ascendant: uncertain because the local birth time occurred twice during a DST change${possible.length ? `; possible positions are ${possible.join(' or ')}` : ''}`)
         } else {
           lines.push('  Ascendant: unknown (no birth time)')
         }
-        parts.push(`EXACT natal chart (computed from ephemeris - use ONLY these placements, never guess):\n${lines.join('\n')}`)
+        const accuracyLabel = ['sign-change-possible', 'ambiguous-local-time'].includes(moonAccuracy?.certainty)
+          ? 'computed from ephemeris; time-sensitive placements are explicitly uncertain'
+          : 'computed from ephemeris'
+        parts.push(`EXACT natal chart (${accuracyLabel} - use ONLY these placements, never guess):\n${lines.join('\n')}`)
       } catch {
         // fall through to sign summary
       }

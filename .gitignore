@@ -37,3 +37,11 @@ next-env.d.ts
 # Local conversation/log artifacts
 *-conversation-*.json
 *-conversation-*.txt
+
+# Private/generated model-development artifacts
+/packages/api/training-data.jsonl
+/packages/api/preference-pairs.jsonl
+/packages/api/real-questions.json
+/packages/api/dataset-review.txt
+/packages/api/prompt-snapshot.txt
+/packages/api/quality-results/

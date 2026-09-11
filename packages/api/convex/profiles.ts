@@ -30,6 +30,7 @@ export const upsert = mutation({
     moonSign: v.optional(v.string()),
     risingSign: v.optional(v.string()),
     chartJson: v.optional(v.string()),
+    chartIntroducedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { phoneNumber, ...fields } = args
@@ -46,10 +47,40 @@ export const upsert = mutation({
       .unique()
 
     if (existing) {
+      // A corrected birth record produces a new chart, which deserves a fresh
+      // reveal the next time the user asks for it or for a horoscope.
+      if (
+        typeof fields.chartJson === 'string' &&
+        fields.chartJson.length > 0 &&
+        fields.chartJson !== existing.chartJson
+      ) {
+        updates.chartIntroducedAt = undefined
+      }
       await ctx.db.patch(existing._id, updates)
       return existing._id
     }
 
     return await ctx.db.insert('profiles', { phoneNumber, ...updates })
+  },
+})
+
+export const markChartIntroduced = mutation({
+  args: {
+    phoneNumber: v.string(),
+    introducedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query('profiles')
+      .withIndex('by_phone', (q: any) => q.eq('phoneNumber', args.phoneNumber))
+      .unique()
+
+    if (!existing?.chartJson) return false
+
+    await ctx.db.patch(existing._id, {
+      chartIntroducedAt: args.introducedAt,
+      updatedAt: Date.now(),
+    })
+    return true
   },
 })

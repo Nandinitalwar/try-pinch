@@ -1,105 +1,67 @@
 // Unified Messaging Service
-// Handles sending messages via both Twilio (SMS) and Blooio (iMessage)
+// Handles Twilio SMS plus Pinch's sole iMessage provider, Linq.
 
-import { BlooioClient } from './blooio'
+import { LinqClient } from './linq'
 
 export interface MessageParams {
   to: string
   content: string
   mediaUrl?: string
-  preferIMessage?: boolean // If true, try Blooio first
+  preferIMessage?: boolean
 }
 
 export interface MessageResult {
   success: boolean
-  service: 'twilio' | 'blooio' | 'none'
+  service: 'twilio' | 'linq' | 'none'
   messageId?: string
   error?: string
 }
 
-/**
- * Unified messaging service that can send via Twilio or Blooio
- */
 export class MessagingService {
-  private blooioClient: BlooioClient | null
+  private linqClient = LinqClient.getClient()
 
-  constructor() {
-    this.blooioClient = BlooioClient.getClient()
-  }
-
-  /**
-   * Send a message using the best available service
-   * Priority: Blooio (iMessage) > Twilio (SMS)
-   */
   async sendMessage(params: MessageParams): Promise<MessageResult> {
     const { to, content, mediaUrl, preferIMessage = true } = params
 
-    // Try Blooio first if available and preferred
-    if (preferIMessage && this.blooioClient) {
-      console.log(`[MessagingService] Attempting to send via Blooio (iMessage) to ${to}`)
-      const result = await this.blooioClient.sendMessage({
-        to,
-        content,
-        mediaUrl,
-      })
-
-      if (result.status === 'OK') {
-        console.log(`[MessagingService] Successfully sent via Blooio: ${result.message_id}`)
+    if (preferIMessage) {
+      if (!this.linqClient) {
         return {
-          success: true,
-          service: 'blooio',
-          messageId: result.message_id,
+          success: false,
+          service: 'linq',
+          error: 'Linq credentials are not configured',
         }
-      } else {
-        console.warn(`[MessagingService] Blooio failed: ${result.error}`)
-        // Fall through to Twilio
       }
+      const result = await this.linqClient.sendMessage({ to, content, mediaUrl })
+      if (result.status === 'OK') {
+        return { success: true, service: 'linq', messageId: result.message_id }
+      }
+      return { success: false, service: 'linq', error: result.error }
     }
 
-    // Fallback to Twilio (or use if Blooio not available)
-    console.log(`[MessagingService] Using Twilio (SMS) to ${to}`)
-    // Note: Twilio sending is handled by TwiML response in webhook
-    // This is just for logging/tracking purposes
-    return {
-      success: true,
-      service: 'twilio',
-      messageId: undefined, // Twilio handles this via TwiML
-    }
+    // Twilio replies are sent by the Twilio webhook route through TwiML.
+    return { success: true, service: 'twilio' }
   }
 
-  /**
-   * Check which services are available
-   */
   getAvailableServices(): string[] {
     const services: string[] = []
-
-    if (this.blooioClient) {
-      services.push('blooio')
-    }
-
-    // Twilio is always available (handled by webhook TwiML response)
+    if (this.linqClient) services.push('linq')
     services.push('twilio')
-
     return services
   }
 
-  /**
-   * Get service status
-   */
   getStatus(): {
-    blooio: boolean
+    provider: 'linq' | null
+    linq: boolean
     twilio: boolean
   } {
     return {
-      blooio: !!this.blooioClient,
-      twilio: true, // Always available via TwiML
+      provider: this.linqClient ? 'linq' : null,
+      linq: !!this.linqClient,
+      twilio: true,
     }
   }
 }
 
-/**
- * Get a singleton instance of the messaging service
- */
 let messagingServiceInstance: MessagingService | null = null
 
 export function getMessagingService(): MessagingService {
@@ -108,4 +70,3 @@ export function getMessagingService(): MessagingService {
   }
   return messagingServiceInstance
 }
-

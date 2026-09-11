@@ -1,60 +1,78 @@
 # How to Get API Keys for Pinch
 
-This guide walks you through getting API keys for SendBlue (iMessage) and Braintrust (AI Observability).
+This guide covers Groq, Linq, and Braintrust credentials. Linq is Pinch's sole iMessage
+provider; Groq is the optional free local reply-provider lane.
+
+## Groq (free local reply testing)
+
+1. Open **https://console.groq.com/keys** and sign in.
+2. Create an API key and copy it immediately.
+3. Put it in `packages/api/.env.local` without sharing it in chat:
+
+```bash
+PINCH_REPLY_PROVIDER=groq
+PINCH_REPLY_MODEL=openai/gpt-oss-120b
+PINCH_REPLY_REASONING_EFFORT=low
+GROQ_API_KEY=your_actual_groq_key
+```
+
+Groq is not Grok: Groq is the inference provider; Grok is xAI's model. This setting only
+moves the user-facing text reply to Groq. Memory extraction, memory embeddings, and voice
+transcription still use `OPENAI_API_KEY`.
+
+The free GPT-OSS limit is 1,000 requests per day but only 8K tokens per minute, so a tool
+round or voice rewrite may need a minute before the next test. Do not copy these local
+settings to Vercel until the live harness passes.
 
 ---
 
-## 🔵 SendBlue (iMessage Support)
+## Linq (primary iMessage provider)
 
-### Step 1: Sign Up for SendBlue
+### Step 1: Create a Linq account and line
 
-1. Go to **https://sendblue.co**
-2. Click **"Get Started"** or **"Sign Up"**
-3. Create an account with your email
-4. Verify your email address
+1. Open **https://dashboard.linqapp.com**
+2. Create an account and provision an iMessage-capable line
+3. Keep the line active in the Linq dashboard
 
-### Step 2: Choose a Plan
+### Step 2: Generate an API token
 
-SendBlue offers different plans:
-- **Developer Plan** (~$20-50/month) - Good for testing
-- **Growth Plan** (~$100+/month) - For production use
-- Check their pricing page for current rates
+1. Open **API → Overview → Generate new token** in the Linq dashboard
+2. Copy the token immediately
+3. Save it as `LINQ_API_KEY`
 
-**Note:** SendBlue requires a paid plan to use their API. There's no free tier.
+### Step 3: Create the webhook subscription
 
-### Step 3: Provision a Phone Number
+Create a subscription for `message.received` with this exact, version-pinned target:
 
-1. Log in to your SendBlue dashboard
-2. Go to **"Phone Numbers"** or **"Numbers"**
-3. Click **"Get a Number"** or **"Provision Number"**
-4. Choose a phone number (US numbers work best for iMessage)
-5. Complete the provisioning process
+```text
+https://your-app.vercel.app/api/webhook/linq?version=2026-02-03
+```
 
-**Important:** Not all SendBlue numbers support iMessage. Make sure to:
-- Select a number that explicitly supports iMessage
-- Verify it's activated for iMessage in the dashboard
+You can create it in the dashboard or with the Partner API:
 
-### Step 4: Get Your API Credentials
+```bash
+curl -X POST https://api.linqapp.com/api/partner/v3/webhook-subscriptions \
+  -H "Authorization: Bearer $LINQ_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_url": "https://your-app.vercel.app/api/webhook/linq?version=2026-02-03",
+    "subscribed_events": ["message.received"]
+  }'
+```
 
-1. In the SendBlue dashboard, go to **Settings** → **API Keys**
-2. You'll see two keys:
-   - **API Key ID** (sb-api-key-id) - Usually starts with `sb_`
-   - **API Secret Key** (sb-api-secret-key) - A longer secret string
-3. Copy both keys (you'll need them for `.env.local`)
+The create response includes a `signing_secret` once. Copy it immediately; Linq does not
+show it again.
 
-### Step 5: Add to Your Environment
+### Step 4: Add the credentials
 
 Edit `packages/api/.env.local`:
 
 ```bash
-SENDBLUE_API_KEY_ID=sb_your_actual_key_id_here
-SENDBLUE_API_SECRET_KEY=your_actual_secret_key_here
-SENDBLUE_FROM_NUMBER=+15551234567  # Your SendBlue number in E.164 format
+LINQ_API_KEY=your_actual_linq_api_key
+LINQ_WEBHOOK_SECRET=whsec_your_actual_linq_signing_secret
 ```
 
-**E.164 Format:** Phone numbers must include country code with `+` prefix:
-- ✅ Correct: `+15551234567`
-- ❌ Wrong: `5551234567` or `(555) 123-4567`
+Phone numbers sent to Linq must use E.164 format, for example `+15551234567`.
 
 ---
 
@@ -114,12 +132,10 @@ BRAINTRUST_PARENT=project_name:pinch-sms-astrologer
 
 ## 💰 Cost Comparison
 
-### SendBlue
-- **Free Tier:** ❌ No free tier
-- **Paid Plans:** Starting at ~$20-50/month
-- **Per Message:** Varies by plan (typically $0.01-0.03 per message)
-- **iMessage:** Included in plans that support it
-- **Best For:** Production iMessage support
+### Linq
+- Check the Linq dashboard for current account and messaging pricing
+- Supports iMessage with RCS/SMS fallback through the same Partner API
+- Pinch uses the existing chat ID for replies and Linq's managed endpoint for proactive sends
 
 ### Braintrust
 - **Free Tier:** ✅ Yes! Generous free tier
@@ -137,11 +153,11 @@ BRAINTRUST_PARENT=project_name:pinch-sms-astrologer
 
 You can test Pinch without these services:
 
-### Without SendBlue:
+### Without Linq:
 - ✅ Twilio SMS still works
 - ✅ All AI features work
 - ❌ No iMessage support
-- The app will log: `[SendBlue] Not configured - skipping iMessage support`
+- The app will log: `[Linq] Not configured - skipping iMessage support`
 
 ### Without Braintrust:
 - ✅ All features work normally
@@ -152,13 +168,13 @@ You can test Pinch without these services:
 
 ## 📋 Quick Checklist
 
-### SendBlue Setup
-- [ ] Sign up at sendblue.co
-- [ ] Choose a paid plan
-- [ ] Provision a phone number with iMessage support
-- [ ] Get API Key ID and API Secret Key
-- [ ] Add to `.env.local`
-- [ ] Configure webhook URL in SendBlue dashboard
+### Linq Setup
+- [ ] Create an account at dashboard.linqapp.com
+- [ ] Provision an iMessage-capable line
+- [ ] Generate an API token
+- [ ] Create a `message.received` webhook subscription pinned to `2026-02-03`
+- [ ] Save the one-time signing secret
+- [ ] Add both credentials to `.env.local` and Vercel
 
 ### Braintrust Setup
 - [ ] Sign up at braintrust.dev (free!)
@@ -168,14 +184,18 @@ You can test Pinch without these services:
 - [ ] Add to `.env.local`
 - [ ] Test and view logs in dashboard
 
+### Groq Setup
+- [ ] Create a key at console.groq.com/keys
+- [ ] Add `GROQ_API_KEY` locally
+- [ ] Run the plain-reply, tool-call, activation, and rewrite harness cases
+
 ---
 
 ## 🆘 Need Help?
 
-### SendBlue Support
-- **Docs:** https://docs.sendblue.co
-- **Support:** support@sendblue.co
-- **Dashboard:** https://app.sendblue.co
+### Linq Support
+- **Docs:** https://docs.linqapp.com
+- **Dashboard:** https://dashboard.linqapp.com
 
 ### Braintrust Support
 - **Docs:** https://www.braintrust.dev/docs
@@ -191,15 +211,13 @@ Once you have your API keys:
 1. Add them to `.env.local` (for local development)
 2. Add them to Vercel (for production):
    ```bash
-   vercel env add SENDBLUE_API_KEY_ID
-   vercel env add SENDBLUE_API_SECRET_KEY
-   vercel env add SENDBLUE_FROM_NUMBER
+   vercel env add LINQ_API_KEY
+   vercel env add LINQ_WEBHOOK_SECRET
    vercel env add BRAINTRUST_API_KEY
    vercel env add BRAINTRUST_PARENT
    ```
-3. Configure SendBlue webhook (see `SENDBLUE_SETUP.md`)
+3. Configure the Linq webhook at `/api/webhook/linq?version=2026-02-03`
 4. Test with real messages!
 5. Monitor in Braintrust dashboard
 
 See `TESTING.md` for detailed testing instructions.
-

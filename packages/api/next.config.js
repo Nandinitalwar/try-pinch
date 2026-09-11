@@ -1,6 +1,20 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  experimental: {
+    // resvg ships a precompiled native addon. Keep it in the server runtime
+    // instead of asking Webpack to parse the .node binary as JavaScript.
+    serverComponentsExternalPackages: ['@resvg/resvg-js', 'ffmpeg-static'],
+    // Local workspace installs hoist to the monorepo root; the linked Vercel
+    // project may install under packages/api. Trace either layout.
+    outputFileTracingIncludes: {
+      '/api/**/*': [
+        '../../node_modules/ffmpeg-static/ffmpeg',
+        './node_modules/ffmpeg-static/ffmpeg',
+        'node_modules/ffmpeg-static/ffmpeg',
+      ],
+    },
+  },
   webpack: (config, { isServer }) => {
     // Exclude native modules from client-side bundle
     if (!isServer) {

@@ -1,5 +1,5 @@
 import { convex, api } from './convexClient'
-import { computeNatalChart } from './astrology'
+import { computeNatalChart, validateBirthDate, validateBirthTime } from './astrology'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export interface BirthData {
@@ -9,6 +9,7 @@ export interface BirthData {
   birth_time_known: boolean
   birth_time_accuracy: 'exact' | 'approximate' | 'unknown'
   birth_timezone: string
+  birth_timezone_known: boolean
   birth_city: string
   birth_country: string
   birth_latitude?: number
@@ -142,6 +143,9 @@ If no birth information is found, return: {"no_birth_data": true}`
         birth_time_known: parsed.birth_time_known || false,
         birth_time_accuracy: parsed.birth_time_accuracy || 'unknown',
         birth_timezone: parsed.birth_timezone || 'UTC',
+        birth_timezone_known: Boolean(
+          parsed.birth_timezone && (parsed.birth_city || parsed.birth_country)
+        ),
         birth_city: parsed.birth_city || 'Unknown',
         birth_country: parsed.birth_country || 'Unknown',
         birth_latitude: typeof parsed.birth_latitude === 'number' ? parsed.birth_latitude : undefined,
@@ -184,6 +188,7 @@ If no birth information is found, return: {"no_birth_data": true}`
         birth_time_known: false,
         birth_time_accuracy: 'unknown',
         birth_timezone: 'UTC',
+        birth_timezone_known: false,
         birth_city: 'Unknown',
         birth_country: 'Unknown',
       }
@@ -200,6 +205,9 @@ If no birth information is found, return: {"no_birth_data": true}`
     }
 
     try {
+      validateBirthDate(birthData.birth_date)
+      if (birthData.birth_time_known) validateBirthTime(birthData.birth_time)
+
       // Compute the real natal chart from ephemeris - never LLM-guessed
       let chartFields: {
         sunSign?: string
@@ -207,24 +215,37 @@ If no birth information is found, return: {"no_birth_data": true}`
         risingSign?: string
         chartJson?: string
       } = {}
-      try {
-        const chart = computeNatalChart({
-          birthDate: birthData.birth_date,
-          birthTime: birthData.birth_time,
-          timezone: birthData.birth_timezone,
-          latitude: birthData.birth_latitude,
-          longitude: birthData.birth_longitude,
-          birthTimeKnown: birthData.birth_time_known,
-        })
-        chartFields = {
-          sunSign: chart.placements.find(p => p.body === 'Sun')?.sign,
-          moonSign: chart.placements.find(p => p.body === 'Moon')?.sign,
-          risingSign: chart.ascendant?.sign,
-          chartJson: JSON.stringify(chart),
+      if (!birthData.birth_timezone_known) {
+        console.log('[BirthDataParser] Chart deferred until birth city/timezone is known')
+        chartFields = { sunSign: '', moonSign: '', risingSign: '', chartJson: '' }
+      } else {
+        try {
+          const chart = computeNatalChart({
+            birthDate: birthData.birth_date,
+            birthTime: birthData.birth_time,
+            timezone: birthData.birth_timezone,
+            latitude: birthData.birth_latitude,
+            longitude: birthData.birth_longitude,
+            birthTimeKnown: birthData.birth_time_known,
+            birthTimeAccuracy: birthData.birth_time_accuracy,
+          })
+          const possibleMoonSigns = chart.accuracy?.moon.possibleSigns || []
+          const moonSignIsCertain = possibleMoonSigns.length <= 1
+          chartFields = {
+            sunSign: chart.placements.find(p => p.body === 'Sun')?.sign,
+            moonSign: moonSignIsCertain ? chart.placements.find(p => p.body === 'Moon')?.sign : undefined,
+            risingSign: chart.ascendant?.sign,
+            chartJson: JSON.stringify(chart),
+          }
+          console.log('[BirthDataParser] Computed chart:', chartFields.sunSign, 'Sun,', chartFields.moonSign, 'Moon,', chartFields.risingSign || 'unknown', 'rising')
+        } catch (chartError) {
+          console.warn('[BirthDataParser] Chart computation deferred:', chartError)
+          // The existing Convex mutation cannot distinguish an omitted optional
+          // field from a request to remove it. Empty strings deliberately clear
+          // stale derived placements when someone corrects their birth record
+          // but has not supplied enough information to recompute it yet.
+          chartFields = { sunSign: '', moonSign: '', risingSign: '', chartJson: '' }
         }
-        console.log('[BirthDataParser] Computed chart:', chartFields.sunSign, 'Sun,', chartFields.moonSign, 'Moon,', chartFields.risingSign || 'unknown', 'rising')
-      } catch (chartError) {
-        console.error('[BirthDataParser] Chart computation failed:', chartError)
       }
 
       await convex.mutation(api.profiles.upsert, {
@@ -234,9 +255,9 @@ If no birth information is found, return: {"no_birth_data": true}`
         birthTime: birthData.birth_time,
         birthTimeKnown: birthData.birth_time_known,
         birthTimeAccuracy: birthData.birth_time_accuracy,
-        birthTimezone: birthData.birth_timezone,
-        birthCity: birthData.birth_city,
-        birthCountry: birthData.birth_country,
+        birthTimezone: birthData.birth_timezone_known ? birthData.birth_timezone : undefined,
+        birthCity: birthData.birth_city !== 'Unknown' ? birthData.birth_city : undefined,
+        birthCountry: birthData.birth_country !== 'Unknown' ? birthData.birth_country : undefined,
         birthLatitude: birthData.birth_latitude,
         birthLongitude: birthData.birth_longitude,
         ...chartFields,

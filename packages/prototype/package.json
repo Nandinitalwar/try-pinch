@@ -1,0 +1,23 @@
+{
+  "name": "pinch-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Logged-out onboarding prototype \u2014 living first-prompt + shareable answer cards",
+  "scripts": {
+    "dev": "next dev -p 3006",
+    "build": "next build",
+    "start": "next start -p 3006",
+    "check": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-contexts.mts"
+  },
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.2.0"
+  }
+}

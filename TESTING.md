@@ -1,173 +1,119 @@
-# Testing SendBlue iMessage Integration
+# Testing iMessage Integration
 
-## Quick Start
+For the production agent, birth-chart, and voice harness (independent of the messaging
+provider), see [`docs/08-testing.md`](docs/08-testing.md). The short commands are:
 
-### 1. Start the Dev Server
+```bash
+cd packages/api
+npm run test:quality:groq -- --dry-run
+npm run test:harness
+PINCH_BASE_URL=http://localhost:3000 npm run test:harness:live
+```
+
+The Groq command is the minimal raw-model diagnostic: no server, database, memory, tools,
+onboarding, or voice rewrites. Remove `--dry-run` after adding `GROQ_API_KEY` to run the
+seven fixed quality cases on the free plan.
+
+## 1. Start the API
 
 ```bash
 cd packages/api
 npm run dev
 ```
 
-The server will start on `http://localhost:3000`
+The server runs at `http://localhost:3000`.
 
-### 2. Test the SendBlue Webhook (Without SendBlue Account)
+## 2. Test Linq (sole iMessage provider)
 
-You can test the webhook endpoint even without SendBlue credentials:
-
-```bash
-./test-sendblue.sh
-```
-
-This simulates an incoming iMessage and tests your webhook processing.
-
-**What to expect:**
-- ✅ Webhook receives the message
-- ✅ AI agent processes it
-- ✅ Response is generated
-- ⚠️ Response won't actually send (no SendBlue credentials)
-- ✅ You'll see the full flow in terminal logs
-
-### 3. Test with Real SendBlue (Requires Account)
-
-#### Step 1: Get SendBlue Credentials
-
-1. Sign up at https://sendblue.co
-2. Get your API credentials from Settings → API Keys
-3. Provision a phone number
-
-#### Step 2: Add Credentials to `.env.local`
-
-Edit `packages/api/.env.local`:
+First run the request-shape unit tests (no credentials or server required):
 
 ```bash
-SENDBLUE_API_KEY_ID=your_actual_api_key_id
-SENDBLUE_API_SECRET_KEY=your_actual_api_secret_key
-SENDBLUE_FROM_NUMBER=+1234567890  # Your SendBlue number
+cd packages/api
+npm run test:linq:unit
 ```
 
-#### Step 3: Expose Local Server with ngrok
+These assert that conversational replies use the inbound chat ID and proactive sends use
+Linq's managed line-selection endpoint.
+
+Then, in a second terminal, simulate the inbound webhook:
 
 ```bash
-# Install ngrok if you haven't
-brew install ngrok
-
-# Expose your local server
-ngrok http 3000
+cd packages/api
+npm run test:linq
 ```
 
-You'll get a URL like: `https://abc123.ngrok.io`
+This sends a current `2026-02-03` `message.received` payload to
+`/api/webhook/linq`. If `LINQ_WEBHOOK_SECRET` is present in `.env.local`, the
+script also signs the request using Linq's Standard Webhooks scheme.
 
-#### Step 4: Configure SendBlue Webhook
-
-1. Go to SendBlue dashboard → Settings → Webhooks
-2. Add webhook URL: `https://abc123.ngrok.io/api/webhook/sendblue`
-3. Select event type: `receive`
-
-#### Step 5: Send a Real iMessage
-
-Send an iMessage to your SendBlue number from your iPhone!
-
-**Example messages to try:**
-- "Hey Pinch, should I take a sick day tomorrow?"
-- "What should I eat for dinner?"
-- "Tell me about my day"
-
-## Testing Checklist
-
-- [ ] Dev server starts without errors
-- [ ] Test webhook responds with 200 OK
-- [ ] AI agent processes messages
-- [ ] Responses are generated
-- [ ] SendBlue credentials configured (optional)
-- [ ] Real iMessages work (requires SendBlue account)
-- [ ] Braintrust logs appear (requires Braintrust account)
-
-## Troubleshooting
-
-### "SendBlue not configured" message
-
-This is normal if you haven't added SendBlue credentials yet. The app will still work, it just won't send responses via iMessage.
-
-### Webhook returns 500 error
-
-Check the terminal logs for the specific error. Common issues:
-- Missing environment variables (Gemini API key, Supabase, etc.)
-- Database connection issues
-- AI agent errors
-
-### Messages not sending
-
-1. Verify SendBlue credentials are correct
-2. Check SendBlue dashboard for API errors
-3. Ensure `from_number` matches your SendBlue number
-4. Check terminal logs for SendBlue API responses
-
-## What Gets Logged
-
-When you test, you'll see logs like:
-
-```
-[SendBlue][+15551234567] Incoming: "Hey Pinch, should I take a sick day tomorrow?"
-[SendBlue] Service: iMessage, Status: RECEIVED
-[SendBlue][+15551234567] Processing combined message: "Hey Pinch, should I take a sick day tomorrow?"
-[SendBlue][+15551234567] History count: 0
-[SendBlue][+15551234567] Sending 1 message(s)
-[SendBlue][+15551234567] Message sent: msg-abc123
-```
-
-## Advanced Testing
-
-### Test with curl
+To choose the simulated sender, message, or endpoint:
 
 ```bash
-curl -X POST "http://localhost:3000/api/webhook/sendblue" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "Hey Pinch, what should I do today?",
-    "is_outbound": false,
-    "status": "RECEIVED",
-    "from_number": "+15551234567",
-    "number": "+15551234567",
-    "to_number": "+18889211387",
-    "service": "iMessage",
-    "message_handle": "test-123",
-    "date_sent": "2024-01-01T00:00:00Z",
-    "date_updated": "2024-01-01T00:00:00Z",
-    "accountEmail": "test@example.com",
-    "error_code": null,
-    "error_message": null,
-    "error_reason": null,
-    "error_detail": null,
-    "was_downgraded": false,
-    "plan": "blue",
-    "media_url": "",
-    "message_type": "message",
-    "group_id": "",
-    "participants": [],
-    "send_style": "invisible",
-    "opted_out": false,
-    "sendblue_number": null,
-    "group_display_name": null
-  }'
+node tests/test-linq-webhook.js \
+  +15551234567 \
+  "hey pinch, should i take a sick day tomorrow?" \
+  "http://localhost:3000/api/webhook/linq?version=2026-02-03"
 ```
 
-### Test Twilio Webhook (SMS)
+The default fake number exercises the inbound pipeline but cannot receive the final
+reply. It will still make the live send attempt when credentials are present, so prefer
+the unit test unless you are intentionally exercising the full local pipeline.
+
+## 3. Configure real Linq credentials
+
+Add these to `packages/api/.env.local` and to the Vercel project:
+
+```env
+LINQ_API_KEY=your_linq_api_key
+LINQ_WEBHOOK_SECRET=whsec_your_linq_webhook_signing_secret
+```
+
+Create a Linq subscription for `message.received` at this exact URL:
+
+```text
+https://your-app.vercel.app/api/webhook/linq?version=2026-02-03
+```
+
+The version query is deliberate. It pins the webhook to the payload shape the route
+parses, while the parser also accepts Linq's older `2025-01-01` shape during migration.
+
+For this project the active production target is:
+
+```text
+https://aiastrologer.vercel.app/api/webhook/linq?version=2026-02-03
+```
+
+## 4. Expected behavior
+
+- The webhook verifies the signature when a secret is configured.
+- Delivery/status events, outbound echoes, and reconciled historical messages are ignored.
+- A text or attachment-only message is accepted and acknowledged immediately.
+- Photos/videos are analyzed and voice notes are transcribed before the agent replies.
+- Voice transcripts participate in chat history, memory recall/extraction, links, and reminders.
+- The reply is sent to the incoming Linq `chat_id`, preserving the thread.
+- Link ingestion, follow-up scheduling, memory extraction, and Braintrust flushing continue
+  after the reply.
+
+Useful logs include:
+
+```text
+[Linq] ✅ Payload parsed successfully
+[Linq] ✅ Webhook acknowledged, processing in background
+[Linq] ✅ Message sent: <message-id>
+```
+
+If `LINQ_API_KEY` is absent, the inbound pipeline still runs but sending logs:
+
+```text
+[Linq] Not configured - skipping iMessage support
+```
+
+## 5. Twilio SMS/WhatsApp smoke test
 
 ```bash
 curl -X POST "http://localhost:3000/api/webhook/twilio" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "From=+15551234567" \
   -d "To=+18889211387" \
-  -d "Body=Hey Pinch, should I take a sick day?"
+  -d "Body=Hey Pinch"
 ```
-
-## Next Steps
-
-Once local testing works:
-
-1. Deploy to Vercel: `vercel --prod`
-2. Add environment variables to Vercel
-3. Update SendBlue webhook to production URL
-4. Test with real iMessages!
-

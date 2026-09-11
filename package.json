@@ -7,9 +7,12 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "npm run dev -w pinch-api",
     "dev:api": "npm run dev -w pinch-api",
+    "dev:prototype": "npm run dev -w pinch-prototype",
     "dev:website": "npm run dev -w pinch-website",
     "build:api": "npm run build -w pinch-api",
+    "build:prototype": "npm run build -w pinch-prototype",
     "build:website": "npm run build -w pinch-website"
   },
   "author": "Pinch",

@@ -6,7 +6,7 @@
 <div align="center">
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/pinch)
-[![Powered by Gemini](https://img.shields.io/badge/Powered%20by-Gemini%202.5-blue.svg)](https://ai.google.dev/)
+[![Powered by GPT-5.6](https://img.shields.io/badge/Powered%20by-GPT--5.6-black.svg)](https://developers.openai.com/api/docs/models/gpt-5.6-sol)
 [![Built with Next.js](https://img.shields.io/badge/Built%20with-Next.js%2014-black)](https://nextjs.org/)
 
 </div>
@@ -23,7 +23,7 @@ Pinch is an AI astrologer that lives in your text messages (SMS or iMessage). Te
 
 - **Personality-first astrology** — Advice based on who you are, not just planet positions
 - **Conversational memory** — Remembers your previous chats, your preferences, your life
-- **Real-time insights** — Searches today's astrology forecasts to inform recommendations
+- **Real-time insights** — Computes current transits against the user's saved chart
 - **Zero friction** — No app downloads, no logins. Just text a number.
 - **iMessage + SMS support** — Works on both iPhone (iMessage) and any phone (SMS via Twilio)
 - **AI observability** — Full Braintrust integration for monitoring AI performance
@@ -48,15 +48,15 @@ Pinch is an AI astrologer that lives in your text messages (SMS or iMessage). Te
 
 ```
 ┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-│   iMessage   │────────▶│   SendBlue   │────────▶│   Next.js    │
+│   iMessage   │────────▶│     Linq     │────────▶│   Next.js    │
 │   or SMS     │         │   or Twilio  │         │   Webhooks   │
 └──────────────┘         └──────────────┘         └──────┬───────┘
                                                           │
                          ┌────────────────────────────────▼────────┐
                          │         Agent System                    │
                          │  ┌──────────────────────────────────┐  │
-                         │  │  Task Decomposer                 │  │
-                         │  │  (routes to appropriate agent)   │  │
+                         │  │  Deterministic context loader    │  │
+                         │  │  (profile, chart, memory, vault) │  │
                          │  └──────────────┬───────────────────┘  │
                          │                 │                       │
                          │  ┌──────────────▼───────────────────┐  │
@@ -64,39 +64,40 @@ Pinch is an AI astrologer that lives in your text messages (SMS or iMessage). Te
                          │  │  • Loads user profile + chart    │  │
                          │  │  • Loads conversation history    │  │
                          │  │  • Loads user memories           │  │
-                         │  │  • Searches web for today's      │  │
-                         │  │    astrology (via Exa AI)        │  │
-                         │  │  • Calls Gemini 2.5 Flash        │  │
+                         │  │  • Computes today's transits     │  │
+                         │  │  • Calls configured reply model  │  │
                          │  │  • Logs to Braintrust            │  │
                          │  └──────────────┬───────────────────┘  │
                          └─────────────────┼──────────────────────┘
                                            │
                          ┌─────────────────▼──────────────────┐
-                         │  Gemini 2.5 Flash                  │
+                         │  OpenAI or Groq / Responses API    │
                          │  • System prompt with personality  │
                          │  • Full conversation history       │
                          │  • Function calling (web search)   │
                          └─────────────────┬──────────────────┘
                                            │
                          ┌─────────────────▼──────────────────┐
-                         │  Response via SendBlue/Twilio      │
+                         │  Response via Linq/Twilio          │
                          │  ──────────────────────▶ WhatsApp  │
                          └────────────────────────────────────┘
 ```
 
 **Tech Stack:**
 - **Framework:** Next.js 14 (App Router) on Vercel
-- **AI:** Google Gemini 2.5 Flash with function calling
-- **Messaging:** Twilio WhatsApp Business API
-- **Web Search:** Exa AI (for real-time astrology forecasts)
-- **Database:** Supabase (user profiles, birth data, conversation memory)
+- **AI:** GPT-5.6 Sol for production replies, optional Groq GPT-OSS 120B for free local reply testing, GPT-5.6 Luna for durable-memory extraction, OpenAI embeddings and voice transcription, and Gemini for birth/image/video parsing
+- **Messaging:** Linq for iMessage; Twilio for WhatsApp and SMS
+- **Web Search:** Exa AI for current non-astrology facts and recommendations
+- **Database:** Convex (profiles, charts, history, memory, and vault)
 - **Sandbox:** bubblewrap-based Linux jail for LLM-authored code execution (see [`packages/sandbox/`](packages/sandbox/))
 
 ---
 
 ## 🛡️ Sandboxed Code Execution
 
-Pinch's agent grounds forecasts in web search (Exa) and does real ephemeris math via LLM-authored Python — both of which expand the trust boundary: search results are attacker-controllable, and LLM-written code is untrusted. A prompt-injection payload in a crawled blog post could otherwise cause the agent to emit Python that reads `SUPABASE_SERVICE_KEY` and exfiltrates it.
+The live Pinch reply path does not execute model-authored code: chart and transit math are
+deterministic TypeScript, and web search is forbidden for astrology. The separate sandbox
+package is an experiment for any future feature that deliberately executes generated code.
 
 The [`packages/sandbox/`](packages/sandbox/) package is a two-runner code-execution service — `naked_run` (unsafe baseline) and `jail_run` (bubblewrap + user / mount / net / pid namespaces, tmpfs rootfs, scrubbed env, rlimits, wall-clock cap) — tested against an escape-attempt suite.
 
@@ -109,7 +110,10 @@ The [`packages/sandbox/`](packages/sandbox/) package is a two-runner code-execut
 | Fork bomb | lands | *xfail* | deferred to Stage 1b (cgroup `pids.max`) |
 | Hang | lands | **blocked** | parent enforces default 1 s wall cap |
 
-Two narrow tools are planned for the Gemini agent — `compute_ephemeris(code)` for chart math and `analyze_user_history(code)` for per-user data analysis — neither of which holds Supabase, Twilio, or Gemini credentials. Full threat model and defense-in-depth layering in [`packages/sandbox/docs/design.md`](packages/sandbox/docs/design.md); roadmap in [`packages/sandbox/ROADMAP.md`](packages/sandbox/ROADMAP.md).
+Any future sandbox tool must receive only row-scoped input and no Convex, messaging, or AI
+credentials. Full threat model and defense-in-depth layering are in
+[`packages/sandbox/docs/design.md`](packages/sandbox/docs/design.md); roadmap in
+[`packages/sandbox/ROADMAP.md`](packages/sandbox/ROADMAP.md).
 
 ---
 
@@ -118,9 +122,11 @@ Two narrow tools are planned for the Gemini agent — `compute_ephemeris(code)` 
 ### Prerequisites
 
 - Node.js 18+
+- Linq account and API key ([dashboard](https://dashboard.linqapp.com/))
 - Twilio account ([sign up](https://www.twilio.com/try-twilio))
-- Google AI API key ([get one](https://ai.google.dev/))
-- Supabase project ([create one](https://supabase.com/))
+- OpenAI API key with GPT-5.6 access ([platform](https://platform.openai.com/))
+- Google AI API key for auxiliary extraction ([get one](https://ai.google.dev/))
+- Convex project ([create one](https://convex.dev/))
 - (Optional) Exa AI key for web search ([get one](https://exa.ai/))
 
 ### 1. Clone & Install
@@ -133,7 +139,12 @@ npm install
 
 ### 2. Set up Database
 
-Run `database/unified_schema.sql` in your Supabase SQL editor to create the required tables.
+From the API package, connect and push the Convex schema/functions:
+
+```bash
+cd packages/api
+npx convex dev --once
+```
 
 ### 3. Configure Environment Variables
 
@@ -144,12 +155,25 @@ Create `.env.local`:
 TWILIO_ACCOUNT_SID=your_twilio_account_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 
-# Google AI
+# iMessage
+LINQ_API_KEY=your_linq_api_key
+LINQ_WEBHOOK_SECRET=whsec_your_linq_webhook_signing_secret
+
+# Reply provider: use openai for production or groq for free local testing
+PINCH_REPLY_PROVIDER=openai
+GROQ_API_KEY=your_groq_api_key
+OPENAI_API_KEY=your_openai_api_key
+PINCH_REPLY_MODEL=gpt-5.6-sol
+PINCH_REPLY_REASONING_EFFORT=medium
+PINCH_MEMORY_EXTRACTION_MODEL=gpt-5.6-luna
+PINCH_MEMORY_EMBEDDING_MODEL=text-embedding-3-small
+
+# Google AI auxiliary extraction
 GOOGLE_AI_API_KEY=your_gemini_api_key
 
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Convex
+NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
+CONVEX_DEPLOY_KEY=your_convex_deploy_key
 
 # Exa AI (optional - for web search)
 EXA_API_KEY=your_exa_api_key
@@ -181,6 +205,17 @@ For production:
 1. Get WhatsApp Business approval (1-3 weeks)
 2. Configure webhook on your production WhatsApp number
 
+### 7. Configure Linq iMessage Webhook
+
+Create a Linq message webhook using this URL:
+
+```text
+https://your-app.vercel.app/api/webhook/linq?version=2026-02-03
+```
+
+Save the webhook signing secret as `LINQ_WEBHOOK_SECRET`. Linq is the only iMessage
+provider in the codebase.
+
 ---
 
 ## 📂 Project Structure
@@ -197,14 +232,15 @@ pinch/
 │   │   ├── taskDecomposer.ts          # Routes tasks to agents
 │   │   ├── executionAgent.ts          # Base agent class
 │   │   └── agents/
-│   │       └── generalTaskAgent.ts    # Core AI agent (Gemini + tools)
+│   │       └── generalTaskAgent.ts    # Core reply agent (GPT-5.6 + tools)
 │   ├── birthDataParser.ts             # Parse birth info from messages
 │   ├── userProfile.ts                 # User profile + chart storage
 │   ├── simpleMemory.ts                # Conversation memory
 │   ├── messageBuffer.ts               # Message buffering/deduplication
-│   └── supabase.ts                    # Supabase client
-├── database/
-│   └── unified_schema.sql             # Database schema
+│   └── convexClient.ts                # Convex client
+├── convex/
+│   ├── schema.ts                      # Database schema and indexes
+│   └── memories.ts                    # Memory mutations and search
 └── vercel.json                         # Vercel config
 ```
 
@@ -220,11 +256,11 @@ pinch/
 - Previous conversations
 - What it remembers about you
 
-### 3. **Pinch searches today's astrology**
-Queries Exa AI for today's forecasts for your sign + current transits
+### 3. **Pinch computes today's sky**
+Calculates current transits against the verified saved chart
 
-### 4. **Gemini generates response**
-System prompt guides Gemini to:
+### 4. **GPT-5.6 generates the response**
+The production prompt guides GPT-5.6 to:
 - Translate astrology into personality-based advice
 - Be direct and conversational (no corporate therapy speak)
 - Give ONE recommendation, not a menu of options
@@ -249,13 +285,14 @@ The agent's personality is defined in `lib/agents/agents/generalTaskAgent.ts`. K
 
 ### Tools (Function Calling)
 
-Gemini can call:
-1. **`search_web`** — Searches Exa AI for real-time astrology forecasts
+GPT-5.6 can call:
+1. **`search_web`** — Searches Exa AI for current non-astrology facts
 2. **`save_birth_data`** — Stores user's birth date/time/location when shared
+3. **`search_vault`** — Retrieves places the user previously saved
 
 **Planned (sandboxed, see [`packages/sandbox/`](packages/sandbox/)):**
-3. **`compute_ephemeris(code)`** — LLM-authored Python using `pyswisseph` / `skyfield` for real chart / transit / aspect math. No credentials, no network, no filesystem, 128 MB / 0.5 CPU / 2 s cap.
-4. **`analyze_user_history(code)`** — LLM-authored pandas over *the requesting user's own* rows, piped in via stdin. Multi-tenant isolation enforced in the API layer (row-scoped query) before the sandbox ever runs.
+4. **`compute_ephemeris(code)`** — LLM-authored Python using `pyswisseph` / `skyfield` for real chart / transit / aspect math. No credentials, no network, no filesystem, 128 MB / 0.5 CPU / 2 s cap.
+5. **`analyze_user_history(code)`** — LLM-authored pandas over *the requesting user's own* rows, piped in via stdin. Multi-tenant isolation enforced in the API layer (row-scoped query) before the sandbox ever runs.
 
 ---
 
@@ -283,27 +320,12 @@ Skip WhatsApp approval and launch with SMS:
 
 ## 📊 Memory & Data
 
-### User Profile Storage (Supabase)
+### Profiles and memory (Convex)
 
-```sql
-users (
-  id, phone_number, name,
-  birth_date, birth_time, birth_city, birth_country,
-  sun_sign, moon_sign, rising_sign,
-  created_at, updated_at
-)
-```
-
-### Conversation Memory (Supabase)
-
-```sql
-chats (
-  id, user_id, role, content,
-  created_at
-)
-```
-
-Last 10 messages loaded per conversation for context.
+Convex stores the raw event log, profiles and computed charts, the last-ten-message chat
+window, vault entities, follow-up candidates, and durable memories. Durable facts use
+stable keys, source provenance, soft correction/deletion, 512-dimensional embeddings,
+and hybrid vector/full-text retrieval. Pinch never learns from its own assistant reply.
 
 ---
 
@@ -328,11 +350,13 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## 🙏 Acknowledgments
 
 Built with:
-- [Gemini 2.5 Flash](https://ai.google.dev/) by Google
+- [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol) by OpenAI
+- [Groq Responses API](https://console.groq.com/docs/responses-api) for the free local reply-provider lane
+- [Gemini](https://ai.google.dev/) by Google for auxiliary extraction
 - [Twilio WhatsApp API](https://www.twilio.com/whatsapp)
 - [Exa AI](https://exa.ai/) for semantic web search
 - [Next.js](https://nextjs.org/) by Vercel
-- [Supabase](https://supabase.com/) for backend
+- [Convex](https://www.convex.dev/) for backend storage
 
 ---
 

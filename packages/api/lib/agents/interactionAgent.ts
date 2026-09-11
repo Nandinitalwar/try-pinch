@@ -5,6 +5,7 @@ import { ExecutionAgent } from './executionAgent'
 import { GeneralTaskAgent } from './agents/generalTaskAgent'
 import { Task, ExecutionResult, AgentContext } from './types'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { getConversationFastPath } from '../conversationFastPath'
 
 export class InteractionAgent {
   private registry: AgentRegistry
@@ -29,29 +30,38 @@ export class InteractionAgent {
     this.decomposer = new TaskDecomposer(apiKey)
   }
 
+  /**
+   * Hands the user's message to the agent verbatim.
+   *
+   * This used to run the message through TaskDecomposer first, which replaced
+   * it with an LLM-written summary - "i got the job!!" became "Acknowledge
+   * user's good news about getting a job and engage in conversation." The
+   * agent therefore never saw a single word the user actually wrote, which
+   * made every instruction about matching their tone, mirroring lowercase, or
+   * reacting to what they said structurally impossible to follow. It also cost
+   * an extra model call per message and always produced exactly one task.
+   *
+   * The decomposer and the multi-agent synthesis path are kept in the codebase
+   * for the moment but are no longer on the reply path.
+   */
   async processMessage(userMessage: string): Promise<string> {
     console.log(`[InteractionAgent] Processing message: ${userMessage.substring(0, 50)}...`)
 
+    const fastPathReply = getConversationFastPath(userMessage)
+    if (fastPathReply) {
+      console.log('[InteractionAgent] Bare greeting fast path')
+      return fastPathReply
+    }
+
     try {
-      // Step 1: Decompose the request into tasks
-      const tasks = await this.decomposeRequest(userMessage)
-      console.log(`[InteractionAgent] Decomposed into ${tasks.length} task(s):`, tasks.map(t => t.type))
+      const agent = new GeneralTaskAgent(userMessage, this.context)
+      const result = await agent.execute()
 
-      // Step 2: Get or spawn execution agents for each task
-      const agents = await this.getOrSpawnAgents(tasks)
-      console.log(`[InteractionAgent] Spawned ${agents.length} execution agent(s)`)
+      if (result.status === 'error') {
+        console.error('[InteractionAgent] Agent returned error:', result.metadata?.error)
+      }
 
-      // Step 3: Execute agents in parallel
-      const results = await Promise.all(
-        agents.map(agent => agent.execute())
-      )
-      console.log(`[InteractionAgent] All agents completed`)
-
-      // Step 4: Synthesize results into coherent response
-      const response = await this.synthesizeResponse(userMessage, results)
-      console.log(`[InteractionAgent] Response synthesized (${response.length} chars)`)
-
-      return response
+      return result.output
     } catch (error) {
       console.error('[InteractionAgent] Error processing message:', error)
       return 'sorry, something went wrong. please try again in a moment.'

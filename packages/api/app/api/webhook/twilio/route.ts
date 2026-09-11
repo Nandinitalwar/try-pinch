@@ -6,8 +6,25 @@ import { UserProfileService } from '@/lib/userProfile'
 import { SimpleMemorySystem } from '@/lib/simpleMemory'
 import { bufferMessage } from '@/lib/messageBuffer'
 import { startConversationSpan, flushBraintrust } from '@/lib/braintrust'
+import { Vault } from '@/lib/vault'
+import { composeMultimodalInput, ProcessedMediaResult } from '@/lib/mediaIngest'
+import { getConversationFastPath } from '@/lib/conversationFastPath'
 
 const WHATSAPP_CHAR_LIMIT = 950  // WhatsApp limit is 1024, leave buffer for XML escaping
+
+// Twilio sends attachments as NumMedia + MediaUrl0..N form fields rather than
+// a JSON array, so they have to be reassembled by index.
+function parseMediaUrls(params: URLSearchParams): string[] {
+  const count = parseInt(params.get('NumMedia') || '0', 10)
+  if (!Number.isFinite(count) || count <= 0) return []
+
+  const urls: string[] = []
+  for (let i = 0; i < count; i++) {
+    const url = params.get(`MediaUrl${i}`)
+    if (url) urls.push(url)
+  }
+  return urls
+}
 
 // Normalize phone numbers (strip whatsapp: prefix and non-digits)
 function normalizePhone(input: string | null): string | null {
@@ -97,14 +114,26 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    if (!fromNumber || !messageBody) {
+    const mediaUrls = parseMediaUrls(params)
+
+    // A WhatsApp image with no caption is a valid message - only reject when
+    // there is nothing at all to work with.
+    if (!fromNumber || (!messageBody && mediaUrls.length === 0)) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
-    
+
     // Buffer the message - waits 1.5s for additional messages before processing
-    console.log(`[${fromNumber}] Incoming: "${messageBody.substring(0, 50)}${messageBody.length > 50 ? '...' : ''}"`)
-    
-    const bufferResult = bufferMessage(fromNumber, messageBody)
+    console.log(`[${fromNumber}] Incoming: "${(messageBody || '').substring(0, 50)}${(messageBody || '').length > 50 ? '...' : ''}"${mediaUrls.length ? ` +${mediaUrls.length} media` : ''}`)
+
+    // Log the raw inbound event before anything interprets it
+    const eventId = await Vault.logInbound({
+      phoneNumber: fromNumber,
+      source: 'whatsapp',
+      text: messageBody || undefined,
+      mediaUrls,
+    })
+
+    const bufferResult = bufferMessage(fromNumber, messageBody || '')
     
     if (!bufferResult.isFirst) {
       // This message was added to an existing buffer - return empty response immediately
@@ -146,27 +175,56 @@ export async function POST(request: NextRequest) {
     )
     console.log(`[${fromNumber}] History count: ${history.length}`, history.length > 0 ? history : '(new user)')
 
-    // Save user message (save the combined message)
-    await ChatStorage.saveMessage(userId, 'user', combinedMessage, undefined, { identifierIsUserId: true })
+    // Analyze media before saving. Voice-note transcripts are user-authored
+    // text and must participate in history, retrieval, and memory extraction.
+    let mediaResult: ProcessedMediaResult = { visualSummaries: [], transcripts: [], failedCount: 0 }
+    if (mediaUrls.length > 0) {
+      try {
+        mediaResult = await Vault.processMedia({
+          phoneNumber: fromNumber,
+          mediaUrls,
+          text: combinedMessage,
+          eventId,
+        })
+        console.log(`[${fromNumber}] Media understood:`, {
+          visuals: mediaResult.visualSummaries.length,
+          voiceNotes: mediaResult.transcripts.length,
+          failed: mediaResult.failedCount,
+        })
+      } catch (error) {
+        console.error(`[${fromNumber}] Media analysis error:`, error)
+        mediaResult.failedCount = mediaUrls.length
+      }
+    }
+    const multimodal = composeMultimodalInput(combinedMessage, mediaResult)
+    const fastPathReply = getConversationFastPath(multimodal.agentMessage)
+
+    await ChatStorage.saveMessage(userId, 'user', multimodal.historyMessage, undefined, { identifierIsUserId: true })
 
     // Load user profile and memories for context
     const userProfile = await UserProfileService.getUserProfile(fromNumber)
     const memorySystem = new SimpleMemorySystem()
-    const userMemories = await memorySystem.getMemories(fromNumber)
+    const userMemories = fastPathReply
+      ? []
+      : await memorySystem.getMemories(fromNumber, 10, multimodal.effectiveMessage || undefined)
 
     // Use InteractionAgent (which uses GeneralTaskAgent with tool calling)
     let aiResponse: string
     let agentError: string | undefined
     try {
-      const agent = new InteractionAgent({
-        userId,
-        phoneNumber: fromNumber,
-        conversationHistory: history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-        userProfile: userProfile ?? undefined,
-        userMemories
-      })
+      if (fastPathReply) {
+        aiResponse = fastPathReply
+      } else {
+        const agent = new InteractionAgent({
+          userId,
+          phoneNumber: fromNumber,
+          conversationHistory: history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+          userProfile: userProfile ?? undefined,
+          userMemories
+        })
 
-      aiResponse = await agent.processMessage(combinedMessage)
+        aiResponse = await agent.processMessage(multimodal.agentMessage)
+      }
     } catch (error) {
       console.error('Agent error:', error)
       if (error instanceof Error) {
@@ -180,7 +238,7 @@ export async function POST(request: NextRequest) {
     // End conversation span with metrics
     if (conversationSpan) {
       conversationSpan.log({
-        input: combinedMessage,
+        input: multimodal.agentMessage,
         output: aiResponse,
         metadata: {
           user_id: userId,
@@ -205,9 +263,31 @@ export async function POST(request: NextRequest) {
     // Extract and store memories in background (don't block response — Twilio has 15s timeout)
     waitUntil(
       (async () => {
+        // Build the vault from any links they shared. After the reply, because
+        // watching a video takes seconds and Twilio's timeout is unforgiving.
+        try {
+          const savedCount = await Vault.processLinks({
+            phoneNumber: fromNumber,
+            text: multimodal.effectiveMessage,
+            eventId,
+          })
+          if (savedCount > 0) {
+            console.log(`[${fromNumber}] Vault updated with ${savedCount} place(s)`)
+          }
+        } catch (error) {
+          console.error(`[${fromNumber}] Link processing error:`, error)
+        }
+
         try {
           const memoryExtractor = new SimpleMemorySystem()
-          const memories = await memoryExtractor.extractMemories(combinedMessage, aiResponse)
+          const memories = multimodal.effectiveMessage && !fastPathReply
+            ? await memoryExtractor.extractMemories(
+                multimodal.effectiveMessage,
+                aiResponse,
+                fromNumber,
+                eventId
+              )
+            : []
           if (memories.length > 0) {
             console.log(`[${fromNumber}] Extracted ${memories.length} memories:`, memories.map(m => m.memory_content))
             await memoryExtractor.storeMemories(fromNumber, memories)

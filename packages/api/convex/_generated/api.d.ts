@@ -9,6 +9,11 @@
  */
 
 import type * as chats from "../chats.js";
+import type * as events from "../events.js";
+import type * as followups from "../followups.js";
+import type * as garments from "../garments.js";
+import type * as memories from "../memories.js";
+import type * as places from "../places.js";
 import type * as profiles from "../profiles.js";
 
 import type {
@@ -19,6 +24,11 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   chats: typeof chats;
+  events: typeof events;
+  followups: typeof followups;
+  garments: typeof garments;
+  memories: typeof memories;
+  places: typeof places;
   profiles: typeof profiles;
 }>;
 

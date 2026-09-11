@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'Pinch API',
-  description: 'SMS AI Astrologer webhook service',
+  description: 'SMS/iMessage AI Astrologer webhook service',
 }
 
 export default function RootLayout({

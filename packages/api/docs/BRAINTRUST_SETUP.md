@@ -54,7 +54,7 @@ vercel env add BRAINTRUST_PARENT
    npm run dev
    ```
 
-2. Send a test message to your Twilio or SendBlue number
+2. Send a test message to your Twilio or Linq number
 
 3. Check your terminal for Braintrust logs:
    ```
@@ -74,8 +74,8 @@ Every SMS/iMessage conversation creates a span with:
 - Error status (if any)
 
 ### LLM Calls
-Every Gemini API call logs:
-- Model name (`gemini-2.5-flash`)
+Every production reply-model call logs:
+- Model name (`gpt-5.6-sol` by default)
 - Input (user message + context)
 - Output (AI response)
 - Token usage (prompt, completion, total)
@@ -104,12 +104,12 @@ Every tool usage logs:
 ```
 sms_conversation (2.3s)
 ├── task_decomposition (0.5s)
-│   └── llm_call: gemini-2.5-flash
+│   └── llm_call: gpt-5.6-sol
 ├── general_task_agent (1.5s)
 │   ├── tool_call: search_web (0.8s)
-│   └── llm_call: gemini-2.5-flash (0.7s)
+│   └── llm_call: gpt-5.6-sol
 └── memory_extraction (0.3s)
-    └── llm_call: gemini-2.5-flash
+    └── llm_call: gpt-5.6-sol
 ```
 
 ### Metrics
@@ -202,4 +202,3 @@ Braintrust batches logs for efficiency. They may take a few seconds to appear in
 - Create custom dashboards for your metrics
 - Use Braintrust's evaluation features to test prompts
 - Integrate with your CI/CD for automated testing
-
