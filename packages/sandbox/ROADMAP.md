@@ -33,6 +33,18 @@ Rewrite using one of:
 
 Compare cold-start, overhead, DX. Write up tradeoffs. This comparison is the interview question.
 
+### Firecracker feasibility note (verified 2026-09-11)
+
+The current development host is Apple Silicon macOS. Firecracker requires Linux KVM and
+therefore cannot be installed or meaningfully verified on this host or inside Docker
+Desktop's ordinary VM. The correct proof environment is a bare-metal Linux machine or a
+nested-virtualization-capable Linux VM exposing `/dev/kvm`.
+
+The Stage 2 spike should provision that environment in CI, pin a Firecracker release and
+kernel/rootfs digest, boot a non-root microVM with no network device, pass requests over
+vsock, enforce host-side deadlines/output caps, and rerun this same escape suite. Do not
+replace the working Bubblewrap lane until cold-start, teardown, and escape tests pass.
+
 ## Stage 3 — production concerns (weekend)
 - Warm pool to amortize cold start.
 - Stdin/stdout protocol + size limits.

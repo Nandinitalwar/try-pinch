@@ -4,7 +4,7 @@ A sandboxed code-execution service for the Pinch agent (and a learning exercise 
 
 **Status: Stage 1 — bubblewrap jail.** Two runners coexist in `runner/`: `naked_run` (unsafe baseline, Stage 0) and `jail_run` (bubblewrap + namespaces + tmpfs rootfs + scrubbed env + rlimits + wall-clock cap). The escape suite runs against both, asserting attacks land against `naked` and are blocked by `jail`.
 
-Current score (inside the Linux container): **11 passed, 1 xfailed** — 5 of 6 attacks blocked by the jail.
+Current score (inside the Linux container): **13 passed, 1 xfailed** — 5 of 6 escape attacks blocked by the jail, plus hard input, timeout, and output bounds.
 
 | Attack | naked (Stage 0) | jail (Stage 1) | Defense |
 |---|---|---|---|

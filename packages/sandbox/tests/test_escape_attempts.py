@@ -20,6 +20,7 @@ import textwrap
 import pytest
 
 from runner import jail_run, naked_run
+from runner.jail import MAX_CODE_BYTES, MAX_STDIN_BYTES, MAX_OUTPUT_BYTES
 
 RUNNERS: list = [pytest.param(("naked", naked_run, False), id="naked")]
 if shutil.which("bwrap"):
@@ -188,3 +189,21 @@ def test_hang(runner):
         assert "DONE" not in result.stdout
     else:
         assert result.duration_s >= 2.0 and "DONE" in result.stdout
+
+
+def test_jail_rejects_oversized_inputs():
+    if not shutil.which("bwrap"):
+        pytest.skip("jail requires Linux + bubblewrap")
+    with pytest.raises(ValueError, match="code exceeds"):
+        jail_run("#" * (MAX_CODE_BYTES + 1))
+    with pytest.raises(ValueError, match="stdin exceeds"):
+        jail_run("pass", stdin="x" * (MAX_STDIN_BYTES + 1))
+    with pytest.raises(ValueError, match="timeout"):
+        jail_run("pass", timeout=31)
+
+
+def test_jail_caps_output_before_parent_reads_it():
+    if not shutil.which("bwrap"):
+        pytest.skip("jail requires Linux + bubblewrap")
+    result = jail_run(f"print('x' * {MAX_OUTPUT_BYTES * 2})", timeout=5)
+    assert len(result.stdout.encode("utf-8")) <= MAX_OUTPUT_BYTES

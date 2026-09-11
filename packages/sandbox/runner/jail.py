@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 import time
 
 from .naked import Result
@@ -26,6 +27,9 @@ DEFAULT_WALL_TIMEOUT_S = 1.0
 MAX_PROCS = 3  # enough for python itself; blocks fork bombs
 MAX_CPU_SECONDS = 2
 MAX_FILE_BYTES = 1024 * 1024  # 1 MB
+MAX_CODE_BYTES = 64 * 1024
+MAX_STDIN_BYTES = 1024 * 1024
+MAX_OUTPUT_BYTES = 1024 * 1024
 
 
 _RLIMIT_PRELUDE = f"""
@@ -76,34 +80,47 @@ def run(code: str, stdin: str = "", timeout: float | None = None) -> Result:
             "bubblewrap (bwrap) is required for the jail runner. "
             "On macOS, run inside the Linux Docker container (see Dockerfile)."
         )
+    if len(code.encode("utf-8")) > MAX_CODE_BYTES:
+        raise ValueError(f"code exceeds {MAX_CODE_BYTES} byte limit")
+    if len(stdin.encode("utf-8")) > MAX_STDIN_BYTES:
+        raise ValueError(f"stdin exceeds {MAX_STDIN_BYTES} byte limit")
+
     wall = timeout if timeout is not None else DEFAULT_WALL_TIMEOUT_S
+    if wall <= 0 or wall > 30:
+        raise ValueError("timeout must be greater than 0 and at most 30 seconds")
     cmd = _build_cmd(code)
     # Empty, minimal env — no host secrets leak through.
     sandbox_env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"}
 
     started = time.monotonic()
-    try:
-        p = subprocess.run(
-            cmd,
-            input=stdin,
-            capture_output=True,
-            text=True,
-            timeout=wall,
-            env=sandbox_env,
-        )
-    except subprocess.TimeoutExpired as e:
-        stdout = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-        stderr = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
-        return Result(
-            stdout=stdout,
-            stderr=stderr,
-            exit_code=-1,
-            duration_s=time.monotonic() - started,
-            timed_out=True,
-        )
+    # Regular temp files plus RLIMIT_FSIZE keep an attacker from making the
+    # trusted parent buffer unbounded stdout/stderr in memory.
+    with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+        try:
+            p = subprocess.run(
+                cmd,
+                input=stdin.encode("utf-8"),
+                stdout=stdout_file,
+                stderr=stderr_file,
+                timeout=wall,
+                env=sandbox_env,
+            )
+            timed_out = False
+        except subprocess.TimeoutExpired:
+            p = None
+            timed_out = True
+
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        stdout = stdout_file.read(MAX_OUTPUT_BYTES).decode(errors="replace")
+        stderr = stderr_file.read(MAX_OUTPUT_BYTES).decode(errors="replace")
+
+    if timed_out:
+        return Result(stdout=stdout, stderr=stderr, exit_code=-1,
+                      duration_s=time.monotonic() - started, timed_out=True)
     return Result(
-        stdout=p.stdout,
-        stderr=p.stderr,
-        exit_code=p.returncode,
+        stdout=stdout,
+        stderr=stderr,
+        exit_code=p.returncode if p else -1,
         duration_s=time.monotonic() - started,
     )
