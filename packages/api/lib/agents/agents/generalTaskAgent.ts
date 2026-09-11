@@ -10,7 +10,7 @@ import { Vault } from '../../vault'
 import { computeTransits, formatHistoricalYearForAgent, formatTransitsForAgent, NatalChart } from '../../astrology'
 import { logLLMCall, logToolCall } from '../../braintrust'
 import { ActivationReplyStage, checkActivationReply, checkVoice, checkRepetition, checkFirstChartIntroduction, checkTimeCoherence, buildRewritePrompt, matchCasing } from '../../voiceCheck'
-import { recordExample } from '../../trainingData'
+import { recordExample, trainingGroupId } from '../../trainingData'
 import { isPersonalHoroscopeRequest } from '../../horoscopeIntent'
 import { createReplyClient, getReplyProviderRequestOptions, ReplyProvider, ReplyReasoningEffort, resolveReplyProviderConfig } from '../../replyProvider'
 
@@ -1171,6 +1171,7 @@ When recommending specific events (concerts, exhibits, etc.), 2-3 max, each form
           rejected: initialViolations.length > 0 ? firstDraft : undefined,
           chosen: output,
           violations: initialViolations,
+          groupId: trainingGroupId(String(this.context.phoneNumber || this.context.userId || 'unknown')),
         })
       }
 

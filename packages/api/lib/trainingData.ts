@@ -11,6 +11,7 @@
 
 import fs from 'fs'
 import path from 'path'
+import crypto from 'crypto'
 
 export interface TrainingExample {
   timestamp: string
@@ -22,6 +23,12 @@ export interface TrainingExample {
   chosen: string
   /** Which rules the first draft broke. Empty means it was clean immediately. */
   violations: string[]
+  /** One-way conversation/profile fingerprint for leakage-safe dataset splits. */
+  groupId?: string
+}
+
+export function trainingGroupId(identifier: string): string {
+  return crypto.createHash('sha256').update(identifier).digest('hex').slice(0, 20)
 }
 
 function logPath(): string | null {

@@ -39,6 +39,14 @@ real traffic would. Two things it deliberately does:
 `scripts/export-training.ts` converts to Gemini, OpenAI, ChatML or DPO format.
 `--minimal-prompt` does the prompt stripping described above.
 
+New captures include a one-way conversation fingerprint. Export with `--split train` and
+`--split validation`; all rows from one conversation stay on one side of the boundary.
+This prevents a validation score from being inflated by seeing the same person's chart
+and conversational context during training. Legacy rows fall back to grouping by their
+full prompt context. The exporter also rejects every shipped response that fails the
+current deterministic voice checker—rewritten examples are kept only when the rewrite
+actually landed cleanly.
+
 ## What the dataset actually is
 
 **Synthetic self-distillation.** Invented users texting the live pipeline. Not real

@@ -9,18 +9,24 @@
 import fs from 'fs'
 import { TrainingExample } from '../lib/trainingData'
 import { checkVoice, matchCasing } from '../lib/voiceCheck'
+import { splitForExample } from '../lib/datasetPolicy'
 
 const [, , inputPath, ...flags] = process.argv
 
 if (!inputPath) {
-  console.error('Usage: npx tsx scripts/export-training.ts <input.jsonl> [--format gemini|openai] [--all]')
+  console.error('Usage: npx tsx scripts/export-training.ts <input.jsonl> [--format gemini|openai|chatml|dpo] [--split train|validation|all] [--validation-ratio 0.1]')
   process.exit(1)
 }
 
 const format = flags.includes('--format')
   ? flags[flags.indexOf('--format') + 1]
   : 'gemini'
-const includeRewritten = flags.includes('--all')
+const split = flags.includes('--split') ? flags[flags.indexOf('--split') + 1] : 'all'
+if (!['train', 'validation', 'all'].includes(split)) throw new Error('--split must be train, validation, or all')
+const validationRatio = flags.includes('--validation-ratio')
+  ? Number(flags[flags.indexOf('--validation-ratio') + 1])
+  : 0.1
+if (!(validationRatio > 0 && validationRatio < 1)) throw new Error('--validation-ratio must be between 0 and 1')
 
 const minimalPrompt = flags.includes('--minimal-prompt')
 
@@ -71,13 +77,18 @@ const usable = examples.filter(e => !FAILURE_RESPONSES.test(e.chosen))
 const shippedClean = usable.filter(e => checkVoice(e.chosen).length === 0)
 const shippedDirty = usable.filter(e => checkVoice(e.chosen).length > 0)
 const cleanFirstTry = usable.filter(e => e.violations.length === 0)
-const selected = includeRewritten ? usable : shippedClean
+// Never export a response the production checker says is dirty. Rewritten
+// responses are already included when the rewrite landed cleanly.
+const splitCounts = { train: 0, validation: 0 }
+for (const example of shippedClean) splitCounts[splitForExample(example, validationRatio)]++
+const selected = shippedClean.filter(example => split === 'all' || splitForExample(example, validationRatio) === split)
 
 console.error(`Read ${examples.length} examples`)
 console.error(`  shipped clean:      ${shippedClean.length}  <- exported`)
 console.error(`  shipped w/ issues:  ${shippedDirty.length}  <- dropped, rewrite never fully landed`)
 console.error(`  (clean first try:   ${cleanFirstTry.length})`)
-console.error(`Exporting ${selected.length} as ${format}`)
+console.error(`  train/validation:  ${splitCounts.train}/${splitCounts.validation} (group-aware, ratio ${validationRatio})`)
+console.error(`Exporting ${selected.length} from split=${split} as ${format}`)
 
 const neededRewrite = examples.filter(e => e.violations.length > 0)
 if (neededRewrite.length > 0) {
