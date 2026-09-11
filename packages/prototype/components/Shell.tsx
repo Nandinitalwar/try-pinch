@@ -10,10 +10,17 @@ export function Sidebar({
   collapsed,
   onToggle,
   onSignup,
+  profile,
 }: {
   collapsed: boolean;
   onToggle: () => void;
   onSignup: () => void;
+  profile?: {
+    birth?: string;
+    time?: string;
+    place?: string;
+    chart?: string;
+  };
 }) {
   return (
     <aside className="sidebar" data-collapsed={collapsed}>
@@ -30,14 +37,20 @@ export function Sidebar({
         <svg viewBox="0 0 240 300" aria-hidden="true">
           <g className="graph-lines"><path d="M120 148 L64 76 M120 148 L180 72 M120 148 L54 210 M120 148 L188 216 M120 148 L120 264" /><path d="M64 76 L180 72 M54 210 L188 216" opacity=".4" /></g>
           <g className="graph-node graph-node-core"><circle cx="120" cy="148" r="27" /><text x="120" y="152">you</text></g>
-          <g className="graph-node graph-node-chart"><circle cx="64" cy="76" r="19" /><text x="64" y="80">sky</text></g>
+          <g className="graph-node graph-node-chart"><circle cx="64" cy="76" r="19" /><text x="64" y="80">{profile?.chart ? 'chart' : 'sky'}</text></g>
           <g className="graph-node graph-node-people"><circle cx="180" cy="72" r="19" /><text x="180" y="76">people</text></g>
           <g className="graph-node graph-node-places"><circle cx="54" cy="210" r="19" /><text x="54" y="214">places</text></g>
           <g className="graph-node graph-node-plans"><circle cx="188" cy="216" r="19" /><text x="188" y="220">plans</text></g>
           <g className="graph-node graph-node-patterns"><circle cx="120" cy="264" r="19" /><text x="120" y="268">patterns</text></g>
         </svg>
       </div>
-      <div className="context-facts"><div><span className="fact-dot fact-dot-sky" />your chart</div><div><span className="fact-dot fact-dot-people" />the people you mention</div><div><span className="fact-dot fact-dot-plans" />what is coming up</div></div>
+      <div className="context-facts">
+        {profile?.chart ? <div><span className="fact-dot fact-dot-sky" />{profile.chart}</div> : <div><span className="fact-dot fact-dot-sky" />your chart</div>}
+        {profile?.birth && <div><span className="fact-dot fact-dot-sky" />born {profile.birth}{profile.time ? ` · ${profile.time}` : ''}</div>}
+        {profile?.place && <div><span className="fact-dot fact-dot-people" />{profile.place}</div>}
+        <div><span className="fact-dot fact-dot-people" />the people you mention</div>
+        <div><span className="fact-dot fact-dot-plans" />what is coming up</div>
+      </div>
 
       <div className="side-foot">
         <p>Text Pinch a thought, a link, or a voice note. It becomes part of the picture.</p>

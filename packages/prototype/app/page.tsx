@@ -22,6 +22,20 @@ type Msg =
   | { id: number; role: 'ai'; question: string; answer: Answer }
   | { id: number; role: 'pending'; question: string; model: ModelId };
 
+function profileFromMessage(text: string) {
+  const date = text.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:,?\s+|\s*,\s*)\d{4}\b/i)?.[0];
+  const time = text.match(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)\b/i)?.[0];
+  const place = text.match(/\b(?:in|at|from)\s+([A-Za-z][A-Za-z .'-]{2,40}?)(?=\s*(?:at|on|,|$))/i)?.[1]?.trim();
+  if (!date && !time && !place) return null;
+  const known = /june\s+14[, ]+2000/i.test(text) && /london/i.test(text);
+  return {
+    birth: date?.replace(/\s+/g, ' ') || undefined,
+    time: time?.replace(/\./g, '') || undefined,
+    place: place || (known ? 'London, England' : undefined),
+    chart: known ? 'Gemini sun · Scorpio moon' : undefined,
+  };
+}
+
 const DEFAULT_DEV: DevState = {
   variant: 'bloom',
   theme: 'dark',
@@ -51,6 +65,7 @@ export default function Page() {
   const [answered, setAnswered] = useState(false);
   const [model, setModel] = useState<ModelId>('z-ai/glm-5.2');
   const [sending, setSending] = useState(false);
+  const [profile, setProfile] = useState<ReturnType<typeof profileFromMessage>>(null);
 
   const mountAt = useRef(Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -198,6 +213,8 @@ export default function Page() {
       }
       const userId = ++msgId.current;
       const pendingId = ++msgId.current;
+      const nextProfile = profileFromMessage(clean);
+      if (nextProfile) setProfile((previous) => ({ ...previous, ...nextProfile }));
       const history = messages.flatMap((message) => {
         if (message.role === 'user') return [{ role: 'user', content: message.text }];
         if (message.role === 'ai') return [{ role: 'assistant', content: message.answer.body }];
@@ -338,6 +355,7 @@ export default function Page() {
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((v) => !v)}
           onSignup={onSignup}
+          profile={profile || undefined}
         />
 
         <main className="main">

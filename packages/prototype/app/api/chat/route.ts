@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model,
         messages: [{ role: 'system', content: SYSTEM_PROMPT + context + verifiedChart }, ...messages],
-        max_tokens: 1400,
+        max_tokens: 1800,
         temperature: 0.75,
         reasoning: { effort: 'low' },
       }),
