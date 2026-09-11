@@ -125,6 +125,26 @@ export default defineSchema({
     .index('by_phone', ['phoneNumber'])
     .index('by_status_due', ['status', 'dueAt']),
 
+  // Explicit jobs the user delegated to Pinch. Follow-ups are social nudges;
+  // tasks are commitments with lifecycle, dedupe, and an audit-friendly state.
+  tasks: defineTable({
+    phoneNumber: v.string(),
+    title: v.string(),
+    status: v.string(), // pending | snoozed | completed | cancelled
+    dueAt: v.optional(v.number()),
+    nextRunAt: v.optional(v.number()),
+    recurrence: v.optional(v.string()),
+    idempotencyKey: v.string(),
+    source: v.string(), // web | imessage | sms | import
+    sourceEventId: v.optional(v.id('events')),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index('by_phone', ['phoneNumber'])
+    .index('by_phone_key', ['phoneNumber', 'idempotencyKey'])
+    .index('by_status_run', ['status', 'nextRunAt']),
+
   // Wardrobe, built from outfit photos the user sends.
   garments: defineTable({
     phoneNumber: v.string(),

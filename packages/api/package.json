@@ -11,7 +11,7 @@
     "test:supabase": "npx tsx test-supabase.ts",
     "test:linq:unit": "npx tsx --test tests/linq-client.test.ts",
     "test:linq": "node tests/test-linq-webhook.js",
-    "test:harness": "npx tsx --test tests/astrology-chart.test.ts tests/chart-delivery.test.ts tests/conversation-fast-path.test.ts tests/horoscope-intent.test.ts tests/media-ingest.test.ts tests/memory-system.test.ts tests/minimal-quality-harness.test.ts tests/reply-provider.test.ts tests/voice-check.test.ts",
+    "test:harness": "npx tsx --test tests/astrology-chart.test.ts tests/chart-delivery.test.ts tests/conversation-fast-path.test.ts tests/horoscope-intent.test.ts tests/media-ingest.test.ts tests/memory-system.test.ts tests/minimal-quality-harness.test.ts tests/reply-provider.test.ts tests/task-state.test.ts tests/voice-check.test.ts",
     "test:harness:live": "npx tsx scripts/test-live-harness.ts",
     "test:quality:groq": "npx tsx scripts/test-minimal-quality.ts",
     "test:memory:live": "npx tsx scripts/test-memory-extraction.ts",

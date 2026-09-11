@@ -5,6 +5,23 @@ was made.** Where a revisit trigger is listed, that's the condition worth reopen
 
 ---
 
+### Web is the control plane; messaging remains the product surface
+**2026-09-11**
+
+The web experience exists for development, memory inspection, consent, and an execution
+audit trail. Pinch does not become a dashboard-first assistant. User-facing delegation
+must work over iMessage, while web supplies visibility and correction.
+
+Instinct's public positioning validates a no-new-interface assistant reached by text or
+call and working across existing apps. Pinch already has that messaging wedge. A separate
+destination UI would dilute it, while an inspection surface solves the harder trust and
+evaluation problem.
+
+**Revisit when:** users repeatedly fail to discover or manage tasks over messaging, or a
+workflow requires dense visual manipulation rather than review and approval.
+
+---
+
 ### The onboarding mark is the ChatGPT logo, with rotation only
 **2026-08-19**
 

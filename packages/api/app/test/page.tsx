@@ -39,6 +39,13 @@ interface MemoryFact {
   confidence?: number
 }
 
+interface Task {
+  _id: string
+  title: string
+  status: 'pending' | 'snoozed' | 'completed' | 'cancelled'
+  dueAt?: number
+}
+
 export default function TestPage() {
   const [sessionId, setSessionId] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
@@ -48,6 +55,8 @@ export default function TestPage() {
   const [places, setPlaces] = useState<Place[]>([])
   const [garments, setGarments] = useState<Garment[]>([])
   const [memories, setMemories] = useState<MemoryFact[]>([])
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [taskInput, setTaskInput] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const chartUrls = useRef<string[]>([])
@@ -74,9 +83,10 @@ export default function TestPage() {
 
   async function refreshVault(id: string) {
     try {
-      const [vaultResponse, memoryResponse] = await Promise.all([
+      const [vaultResponse, memoryResponse, tasksResponse] = await Promise.all([
         fetch(`/api/vault?sessionId=${encodeURIComponent(id)}`),
         fetch(`/api/memory?phone=${encodeURIComponent(id)}`),
+        fetch(`/api/tasks?sessionId=${encodeURIComponent(id)}`),
       ])
       if (vaultResponse.ok) {
         const data = await vaultResponse.json()
@@ -88,9 +98,31 @@ export default function TestPage() {
         const groups = data.data?.memories as Record<string, MemoryFact[]> | undefined
         setMemories(groups ? Object.values(groups).flat() : [])
       }
+      if (tasksResponse.ok) setTasks((await tasksResponse.json()).tasks || [])
     } catch {
       // Context display is non-critical; ignore failures
     }
+  }
+
+  async function createTask() {
+    const title = taskInput.trim()
+    if (!title || !sessionId) return
+    const response = await fetch('/api/tasks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, title, idempotencyKey: crypto.randomUUID() }),
+    })
+    if (response.ok) {
+      setTaskInput('')
+      await refreshVault(sessionId)
+    }
+  }
+
+  async function completeTask(id: string) {
+    const response = await fetch('/api/tasks', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, id, status: 'completed' }),
+    })
+    if (response.ok) await refreshVault(sessionId)
   }
 
   async function handleFiles(files: FileList | null) {
@@ -174,6 +206,7 @@ export default function TestPage() {
     setPlaces([])
     setGarments([])
     setMemories([])
+    setTasks([])
   }
 
   return (
@@ -258,9 +291,38 @@ export default function TestPage() {
       </div>
 
       <div style={S.vaultCol}>
-        <div style={S.vaultHeader}>What Pinch knows</div>
+        <div style={S.vaultHeader}>Pinch control plane</div>
 
-        <div style={S.sectionLabel}>Memory ({memories.length})</div>
+        <div style={S.sectionLabel}>Delegated tasks ({tasks.filter(t => t.status === 'pending' || t.status === 'snoozed').length})</div>
+        <div style={S.taskComposer}>
+          <input
+            value={taskInput}
+            onChange={event => setTaskInput(event.target.value)}
+            onKeyDown={event => { if (event.key === 'Enter') createTask() }}
+            placeholder="add a task"
+            style={S.taskInput}
+          />
+          <button onClick={createTask} style={S.taskAdd}>+</button>
+        </div>
+        {tasks.length === 0 && <div style={S.vaultEmpty}>Delegate a concrete job to Pinch.</div>}
+        {tasks.map(task => (
+          <div key={task._id} style={{ ...S.vaultItem, opacity: task.status === 'completed' ? 0.45 : 1 }}>
+            <div style={S.taskRow}>
+              <button
+                onClick={() => completeTask(task._id)}
+                disabled={task.status === 'completed' || task.status === 'cancelled'}
+                aria-label={`Complete ${task.title}`}
+                style={S.taskCheck}
+              >{task.status === 'completed' ? '✓' : ''}</button>
+              <div>
+                <div style={S.memoryText}>{task.title}</div>
+                <div style={S.vaultMeta}>{task.status}{task.dueAt ? ` · ${new Date(task.dueAt).toLocaleString()}` : ''}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <div style={{ ...S.sectionLabel, marginTop: 24 }}>Memory ({memories.length})</div>
         {memories.length === 0 && <div style={S.vaultEmpty}>Tell Pinch a lasting preference, relationship, or plan.</div>}
         {memories.map(memory => (
           <div key={memory.id} style={S.vaultItem}>
@@ -337,4 +399,9 @@ const S: Record<string, React.CSSProperties> = {
   vaultMeta: { fontSize: 11, color: '#6b6b73', marginTop: 2 },
   vaultNoteSm: { fontSize: 11, color: '#8a8a92', marginTop: 4, lineHeight: 1.4 },
   memoryText: { fontSize: 12, color: '#c9c9cf', lineHeight: 1.4 },
+  taskComposer: { display: 'flex', gap: 6, marginBottom: 10 },
+  taskInput: { minWidth: 0, flex: 1, background: '#141418', border: '1px solid #2a2a30', borderRadius: 8, padding: '7px 9px', color: '#e8e8ea', fontSize: 12, outline: 'none' },
+  taskAdd: { width: 30, border: 0, borderRadius: 8, color: '#fff', background: '#2f6fed', cursor: 'pointer' },
+  taskRow: { display: 'flex', alignItems: 'flex-start', gap: 8 },
+  taskCheck: { width: 16, height: 16, marginTop: 1, padding: 0, flexShrink: 0, border: '1px solid #4a4a52', borderRadius: 5, background: 'transparent', color: '#7ec98f', fontSize: 11, lineHeight: '14px', cursor: 'pointer' },
 }
