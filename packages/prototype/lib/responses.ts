@@ -9,6 +9,17 @@ export interface Answer {
   sharePoints: string[];
 }
 
+export function answerFromModel(body: string): Answer {
+  const plain = body.replace(/[#*_>`]/g, '').trim();
+  const lines = plain.split('\n').map((line) => line.replace(/^[-–—]\s*/, '').trim()).filter(Boolean);
+  const title = lines[0] || 'your reading';
+  return {
+    body,
+    shareTitle: title.length > 72 ? `${title.slice(0, 69)}…` : title,
+    sharePoints: lines.slice(1, 4).map((line) => line.length > 90 ? `${line.slice(0, 87)}…` : line),
+  };
+}
+
 /**
  * Canned answers. This prototype deliberately ships no model call: it runs on a
  * laptop with no key, in an interview room with no wifi, and every reviewer sees

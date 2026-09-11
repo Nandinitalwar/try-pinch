@@ -7,17 +7,20 @@ import { DevPanel, type DevState } from '../components/DevPanel';
 import { ShareCard } from '../components/ShareCard';
 import { Sidebar, TopBar } from '../components/Shell';
 import { KindIcon } from '../components/icons';
+import { MODEL_OPTIONS, ModelPicker, type ModelId } from '../components/ModelPicker';
 import { deriveContext, detectDevice, detectTimeZone } from '../lib/context';
 import { CONTROL_CHIPS, ledeFor, promptsFor, renderPrompt } from '../lib/prompts';
-import { getAnswer, type Answer } from '../lib/responses';
+import { answerFromModel, getAnswer, type Answer } from '../lib/responses';
 import { track } from '../lib/track';
 import { usePromptCarousel } from '../lib/usePromptCarousel';
 
 const STORAGE_KEY = 'first-prompt.dev';
+const MODEL_STORAGE_KEY = 'pinch.model';
 
 type Msg =
   | { id: number; role: 'user'; text: string }
-  | { id: number; role: 'ai'; question: string; answer: Answer };
+  | { id: number; role: 'ai'; question: string; answer: Answer }
+  | { id: number; role: 'pending'; question: string; model: ModelId };
 
 const DEFAULT_DEV: DevState = {
   variant: 'bloom',
@@ -46,6 +49,8 @@ export default function Page() {
   const [toast, setToast] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [answered, setAnswered] = useState(false);
+  const [model, setModel] = useState<ModelId>('z-ai/glm-5.2');
+  const [sending, setSending] = useState(false);
 
   const mountAt = useRef(Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -82,6 +87,10 @@ export default function Page() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) next = { ...next, ...JSON.parse(saved) };
       else next.device = detectDevice(window.innerWidth);
+      const savedModel = localStorage.getItem(MODEL_STORAGE_KEY);
+      if (MODEL_OPTIONS.some((candidate) => candidate.id === savedModel)) {
+        setModel(savedModel as ModelId);
+      }
     } catch {
       /* private mode — defaults are fine */
     }
@@ -137,6 +146,15 @@ export default function Page() {
     }
   }, [dev, ready]);
 
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      localStorage.setItem(MODEL_STORAGE_KEY, model);
+    } catch {
+      /* private mode — the default remains GLM 5.2 */
+    }
+  }, [model, ready]);
+
   /* ── impression + kinetic prompt timing ───────────────── */
   useEffect(() => {
     if (!ready || !locationReady) return;
@@ -165,9 +183,9 @@ export default function Page() {
 
   /* ── sending ──────────────────────────────────────────── */
   const send = useCallback(
-    (text: string, promptId: string | null, source: 'carousel' | 'chip' | 'composer') => {
+    async (text: string, promptId: string | null, source: 'carousel' | 'chip' | 'composer') => {
       const clean = text.trim();
-      if (!clean) return;
+      if (!clean || sending) return;
       if (messages.length === 0) {
         track('first_message_sent', {
           source,
@@ -178,20 +196,59 @@ export default function Page() {
           ms_to_first_message: Date.now() - mountAt.current,
         });
       }
+      const userId = ++msgId.current;
+      const pendingId = ++msgId.current;
+      const history = messages.flatMap((message) => {
+        if (message.role === 'user') return [{ role: 'user', content: message.text }];
+        if (message.role === 'ai') return [{ role: 'assistant', content: message.answer.body }];
+        return [];
+      });
       setMessages((prev) => [
         ...prev,
-        { id: ++msgId.current, role: 'user', text: clean },
-        {
-          id: ++msgId.current,
-          role: 'ai',
-          question: clean,
-          answer: getAnswer(promptId, clean, ctx),
-        },
+        { id: userId, role: 'user', text: clean },
+        { id: pendingId, role: 'pending', question: clean, model },
       ]);
       setInput('');
       setPhase('thread');
+      setAnswered(false);
+      setSending(true);
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: [...history, { role: 'user', content: clean }],
+            context: { label: ctx.label, city: ctx.city, timeZone: dev.timeZone },
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || typeof result.text !== 'string') {
+          throw new Error(result.error || 'The selected oracle could not answer.');
+        }
+        const answer = answerFromModel(result.text);
+        setMessages((prev) => prev.map((message) => message.id === pendingId
+          ? { id: pendingId, role: 'ai' as const, question: clean, answer }
+          : message));
+      } catch (error) {
+        const fallback = getAnswer(promptId, clean, ctx);
+        const detail = error instanceof Error ? error.message : 'The selected oracle could not answer.';
+        setMessages((prev) => prev.map((message) => message.id === pendingId
+          ? {
+              id: pendingId,
+              role: 'ai' as const,
+              question: clean,
+              answer: {
+                ...fallback,
+                body: `${fallback.body}\n\n_Oracle unavailable: ${detail}_`,
+              },
+            }
+          : message));
+      } finally {
+        setSending(false);
+      }
     },
-    [ctx, dev.variant, messages.length],
+    [ctx, dev.timeZone, dev.variant, messages, model, sending],
   );
 
   const pickKineticPrompt = useCallback(() => {
@@ -318,7 +375,10 @@ export default function Page() {
                   focusTracked.current = true;
                   track('composer_focused', { variant: dev.variant, context: ctx.key });
                 }}
+                disabled={sending}
               />
+
+              <ModelPicker value={model} onChange={setModel} disabled={sending} />
 
               {dev.variant === 'bloom' && activePrompt && (
                 <button
@@ -354,6 +414,11 @@ export default function Page() {
                       <div className="msg-user" key={m.id}>
                         <span>{m.text}</span>
                       </div>
+                    ) : m.role === 'pending' ? (
+                      <div className="msg-ai model-thinking" key={m.id}>
+                        <span className="zodiac-pulse" aria-hidden="true">✦</span>
+                        <span>{MODEL_OPTIONS.find((candidate) => candidate.id === m.model)?.label} is reading…</span>
+                      </div>
                     ) : (
                       <AiMessage
                         key={m.id}
@@ -385,11 +450,13 @@ export default function Page() {
               </div>
 
               <div className="thread-foot">
+                <ModelPicker value={model} onChange={setModel} disabled={sending} />
                 <Composer
                   value={input}
                   onChange={setInput}
                   onSubmit={() => send(input, null, 'composer')}
                   placeholder=""
+                  disabled={sending}
                 />
                 <p className="disclaimer">Pinch can be wrong. Keep your own judgment.</p>
               </div>

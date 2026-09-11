@@ -400,6 +400,46 @@ button {
 .thread-foot .composer-wrap {
   margin: 0 auto;
 }
+.model-picker {
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 12px auto -16px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--elev) 82%, transparent);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.thread-foot .model-picker {
+  margin: 0 auto 8px;
+}
+.model-spark {
+  color: #b998e8;
+  font-size: 10px;
+}
+.model-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.model-picker select {
+  appearance: none;
+  border: 0;
+  outline: 0;
+  padding: 0 14px 0 0;
+  color: var(--text-dim);
+  background: transparent;
+  font: inherit;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.model-picker:has(select:disabled) {
+  opacity: 0.55;
+}
 .composer {
   display: flex;
   align-items: flex-end;
@@ -480,6 +520,20 @@ button {
   display: flex;
   justify-content: flex-end;
   margin: 22px 0;
+}
+.model-thinking {
+  align-items: center;
+  gap: 10px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+.zodiac-pulse {
+  color: #b998e8;
+  animation: zodiacPulse 1.2s ease-in-out infinite;
+}
+@keyframes zodiacPulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.1); }
 }
 .msg-user span {
   background: var(--bubble);
