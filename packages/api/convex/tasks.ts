@@ -1,7 +1,6 @@
 import { mutationGeneric as mutation, queryGeneric as query } from 'convex/server'
 import { v } from 'convex/values'
 
-const terminal = new Set(['completed', 'cancelled'])
 const allowed: Record<string, Set<string>> = {
   pending: new Set(['snoozed', 'completed', 'cancelled']),
   snoozed: new Set(['pending', 'completed', 'cancelled']),
@@ -17,7 +16,9 @@ export const create = mutation({
     const existing = await ctx.db.query('tasks')
       .withIndex('by_phone_key', (q: any) => q.eq('phoneNumber', args.phoneNumber).eq('idempotencyKey', args.idempotencyKey))
       .first()
-    if (existing && !terminal.has(existing.status)) return existing
+    // Idempotency is request-level, not status-level: a retry after a worker
+    // or client timeout must never create a second copy of completed work.
+    if (existing) return existing
 
     const now = Date.now()
     const id = await ctx.db.insert('tasks', {
