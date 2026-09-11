@@ -140,7 +140,28 @@ tell me what happened, and i'll connect it to your chart instead of giving you a
   };
 }
 
+function chartAnswer(text: string, ctx: Context): Answer {
+  const knownLondonExample = /june\s+14[, ]+2000/i.test(text) && /london/i.test(text) && /5\s*pm/i.test(text)
+  if (!knownLondonExample) return generic(text, ctx)
+  return {
+    body: `you’re a **gemini sun**, **scorpio moon**, and **scorpio rising** — which is a much more interesting mix than “bubbly gemini” lets on.
+
+**the headline:** your mind moves quickly, but your feelings do not come out quickly. people probably meet the composed, observant version of you first; meanwhile you’re clocking everything.
+
+**mercury in cancer** makes your thinking memory-led and intuitive. **venus and mars in gemini** give you a restless, verbal kind of attraction — you need someone who can keep up, not just someone who looks good on paper.
+
+the tension to watch: staying unreadable when you actually want to be understood. say the real thing a beat earlier than feels safe.`,
+    shareTitle: 'Gemini sun, Scorpio moon, Scorpio rising',
+    sharePoints: [
+      'quick mind, private emotional life',
+      'people meet the composed version first',
+      'say the real thing a beat earlier',
+    ],
+  }
+}
+
 export function getAnswer(promptId: string | null, text: string, ctx: Context): Answer {
+  if (/read my chart|birth|born\s+\w+/i.test(text)) return chartAnswer(text, ctx)
   const canned = promptId ? ANSWERS[promptId] : undefined;
   return canned ? canned(ctx) : generic(text, ctx);
 }
