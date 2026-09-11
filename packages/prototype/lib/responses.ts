@@ -124,18 +124,18 @@ Want me to hold the format and you fill in the blanks?`,
 
 function generic(text: string, ctx: Context): Answer {
   return {
-    body: `Here's how I'd think about that.
+    body: `i can read the pattern, but i need one more piece from you.
 
-- **Narrow it to one decision.** "${text.replace(/\.$/, '')}" is really a question about what you want the next hour to feel like — pick that first and the rest gets easy.
-- **Use what's already true.** It's ${ctx.label.toLowerCase()}. That rules out about half the options for you, for free.
-- **Ship the small version.** Whatever the plan is, there's a version that takes ten minutes. Do that one, today.
+- **Your question:** "${text.replace(/\.$/, '')}"
+- **The timing:** ${ctx.label.toLowerCase()} — the moment matters here.
+- **Next:** send your birth date, exact time if you have it, and birthplace for a chart-grounded read.
 
-Tell me a bit more and I'll get specific — I do better with constraints.`,
+tell me what happened, and i'll connect it to your chart instead of giving you a generic horoscope.`,
     shareTitle: text.length > 68 ? `${text.slice(0, 65)}…` : text,
     sharePoints: [
-      'Narrow it to one decision',
-      'Use what is already true about right now',
-      'Ship the ten-minute version today',
+      'Your chart is personal, not generic',
+      'Timing is part of the read',
+      'Bring me the real question',
     ],
   };
 }

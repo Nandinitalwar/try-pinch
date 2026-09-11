@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Composer } from '../components/Composer';
 import { AiMessage } from '../components/AiMessage';
 import { DevPanel, type DevState } from '../components/DevPanel';
-import { ChatGPTMark } from '../components/ChatGPTMark';
 import { ShareCard } from '../components/ShareCard';
 import { Sidebar, TopBar } from '../components/Shell';
 import { KindIcon } from '../components/icons';
@@ -299,7 +298,7 @@ export default function Page() {
               {dev.variant === 'bloom' ? (
                 <>
                   <div className="kinetic-mark">
-                    <ChatGPTMark size={dev.device === 'mobile' ? 80 : 92} animated={false} interactive />
+                    <div className="zodiac-mark" aria-label="Pinch astrology mark">✦</div>
                   </div>
                   <h1 className="hero-lede">{ledeFor(ctx)}</h1>
                 </>
@@ -343,7 +342,7 @@ export default function Page() {
               )}
 
               <p className="disclaimer" style={{ marginTop: 18 }}>
-                By messaging ChatGPT, you agree to our Terms and Privacy Policy.
+                Pinch is a reflective tool, not a substitute for professional advice.
               </p>
             </div>
           ) : (
@@ -377,7 +376,7 @@ export default function Page() {
                     <div className="signup-nudge">
                       <p>Keep this chat and everything after it.</p>
                       <button className="btn-primary" onClick={onSignup}>
-                        Sign up for free
+                        Keep my chart
                       </button>
                     </div>
                   )}
@@ -392,7 +391,7 @@ export default function Page() {
                   onSubmit={() => send(input, null, 'composer')}
                   placeholder=""
                 />
-                <p className="disclaimer">ChatGPT can make mistakes. Check important info.</p>
+                <p className="disclaimer">Pinch can be wrong. Keep your own judgment.</p>
               </div>
             </>
           )}

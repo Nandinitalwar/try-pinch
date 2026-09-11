@@ -1,6 +1,5 @@
 'use client';
 
-import { ChatGPTMark } from './ChatGPTMark';
 import {
   ChevronDown,
   Help,
@@ -48,9 +47,9 @@ export function Sidebar({
       ))}
 
       <div className="side-foot">
-        <p>Sign up to keep your chat history and pick up where you left off.</p>
+        <p>Save your chart, memories, and the threads Pinch is following.</p>
         <button className="btn-primary" style={{ width: '100%' }} onClick={onSignup}>
-          Sign up for free
+          Keep my chart
         </button>
       </div>
     </aside>
@@ -75,7 +74,7 @@ export function TopBar({
           </button>
         )}
         <button className="brand-pill">
-          ChatGPT <span className="chev"><ChevronDown /></span>
+        Pinch <span className="brand-sub">your personal astrologer</span><span className="chev"><ChevronDown /></span>
         </button>
       </div>
       <div className="topbar-right">
@@ -83,7 +82,7 @@ export function TopBar({
           Log in
         </button>
         <button className="btn-ghost" onClick={onSignup}>
-          Sign up for free
+          Keep my chart
         </button>
         <button className="icon-btn" aria-label="Help">
           <Help />
@@ -95,8 +94,8 @@ export function TopBar({
 
 export function Avatar() {
   return (
-    <div className="avatar">
-      <ChatGPTMark size={26} animated={false} decorative />
+    <div className="avatar" aria-label="Pinch">
+      <span aria-hidden>✦</span>
     </div>
   );
 }

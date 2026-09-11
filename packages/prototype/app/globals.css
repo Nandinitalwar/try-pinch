@@ -211,10 +211,31 @@ button {
 .brand-pill .chev {
   color: var(--text-faint);
 }
+.brand-sub {
+  color: var(--text-faint);
+  font-size: 11px;
+  margin-left: 2px;
+  letter-spacing: 0.01em;
+}
 .topbar-right {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.zodiac-mark {
+  width: 92px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+  color: #d9b36c;
+  font-size: 74px;
+  line-height: 1;
+  text-shadow: 0 0 30px rgba(217, 179, 108, 0.35);
+  animation: zodiac-pulse 5s ease-in-out infinite;
+}
+@keyframes zodiac-pulse {
+  0%, 100% { transform: scale(0.96) rotate(-4deg); opacity: 0.82; }
+  50% { transform: scale(1.04) rotate(4deg); opacity: 1; }
 }
 .btn-primary {
   background: var(--btn);

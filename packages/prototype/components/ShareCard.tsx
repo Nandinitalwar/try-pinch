@@ -42,7 +42,7 @@ export function ShareCard({
             ))}
           </ul>
           <div className="share-foot">
-            <strong>ChatGPT</strong>
+            <strong>Pinch</strong>
             <span>{link.replace(/^https?:\/\//, '')}</span>
           </div>
         </div>

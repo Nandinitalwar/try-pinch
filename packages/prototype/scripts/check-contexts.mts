@@ -41,7 +41,7 @@ for (const weekday of WEEKDAYS) {
     assert.equal(prompts.length, 5, `${ctx.key} has ${prompts.length} prompts`);
     assert.deepEqual(
       prompts.map((prompt) => prompt.id).sort(),
-      ['job-decide', 'job-explain', 'job-plan', 'job-rewrite', 'job-summarize'],
+      ['astro-birth', 'astro-decide', 'astro-memory', 'astro-today', 'astro-week'],
     );
     for (const p of prompts) {
       for (const device of ['desktop', 'mobile'] as const) {
@@ -58,8 +58,8 @@ const morning = promptsFor(at('Monday', 9)).map((prompt) => prompt.id);
 const evening = promptsFor(at('Monday', 19)).map((prompt) => prompt.id);
 assert.notDeepEqual(morning, evening, 'context should change prompt order');
 const saturday = at('Saturday', 11);
-const weekendPlan = promptsFor(saturday).find((prompt) => prompt.id === 'job-plan');
+const weekendPlan = promptsFor(saturday).find((prompt) => prompt.id === 'astro-week');
 assert.ok(weekendPlan);
-assert.equal(renderPrompt(weekendPlan, saturday), 'Plan my weekend in San Francisco around a $100 budget');
+assert.equal(renderPrompt(weekendPlan, saturday), 'What should I know about this week?');
 
 console.log(`ok — ${checked} weekday/hour combinations, each has 5 concrete jobs`);

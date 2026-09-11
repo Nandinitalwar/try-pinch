@@ -16,46 +16,14 @@ export interface Prompt {
  * the visitor's coarse city.
  */
 const JOBS: Record<string, Prompt> = {
-  rewrite: {
-    id: 'job-rewrite',
-    kind: 'write',
-    text: 'Rewrite this email so it sounds confident',
-    mobileText: 'Rewrite this email confidently',
-  },
-  summarize: {
-    id: 'job-summarize',
-    kind: 'write',
-    text: 'Summarize this article into five bullets',
-    mobileText: 'Summarize this into five bullets',
-  },
-  explain: {
-    id: 'job-explain',
-    kind: 'learn',
-    text: "Explain this like I'm smart but new to it",
-    mobileText: "Explain this like I'm new to it",
-  },
-  plan: {
-    id: 'job-plan',
-    kind: 'plan',
-    text: 'Plan my week in {city} around a $100 budget',
-    mobileText: 'Plan my week in {city} on $100',
-  },
-  decide: {
-    id: 'job-decide',
-    kind: 'fun',
-    text: 'Help me choose between these two options in {city}',
-    mobileText: 'Help me choose between these in {city}',
-  },
+  rewrite: { id: 'astro-birth', kind: 'learn', text: 'Read my chart — born [date], [time], [city]' },
+  summarize: { id: 'astro-today', kind: 'local', text: "What's my energy today?", mobileText: 'my energy today?' },
+  explain: { id: 'astro-week', kind: 'plan', text: 'What should I know about this week?' },
+  plan: { id: 'astro-decide', kind: 'fun', text: 'Should I go out tonight or stay in?' },
+  decide: { id: 'astro-memory', kind: 'write', text: 'Remember that I have a big decision coming up' },
 };
 
 function planPrompt(ctx: Context): Prompt {
-  if (ctx.dayKind === 'weekend') {
-    return {
-      ...JOBS.plan,
-      text: 'Plan my weekend in {city} around a $100 budget',
-      mobileText: 'Plan my weekend in {city} on $100',
-    };
-  }
   return JOBS.plan;
 }
 
@@ -71,21 +39,15 @@ export function promptsFor(ctx: Context): Prompt[] {
   const byId: Record<string, Prompt> = { ...JOBS, plan };
 
   let order: string[];
-  if (ctx.dayKind === 'weekend') {
-    order = ['plan', 'decide', 'summarize', 'explain', 'rewrite'];
-  } else if (ctx.timeBucket === 'earlyMorning' || ctx.timeBucket === 'morning') {
-    order = ['rewrite', 'plan', 'explain', 'summarize', 'decide'];
-  } else if (ctx.timeBucket === 'midday' || ctx.timeBucket === 'afternoon') {
-    order = ['summarize', 'rewrite', 'decide', 'explain', 'plan'];
-  } else if (ctx.timeBucket === 'evening' || ctx.timeBucket === 'night') {
-    order = ['plan', 'decide', 'rewrite', 'summarize', 'explain'];
-  } else {
-    order = ['explain', 'decide', 'summarize', 'rewrite', 'plan'];
-  }
+  order = ctx.dayKind === 'weekend'
+    ? ['summarize', 'plan', 'decide', 'rewrite', 'explain']
+    : (ctx.timeBucket === 'evening' || ctx.timeBucket === 'night')
+      ? ['plan', 'decide', 'summarize', 'rewrite', 'explain']
+      : ['summarize', 'explain', 'rewrite', 'decide', 'plan'];
 
   // The first frame makes the local context legible. The composer itself still
   // starts empty; this is only the first sentence that types into it.
-  return ['plan', ...order.filter((key) => key !== 'plan')].map((key) => byId[key]);
+  return order.map((key) => byId[key]);
 }
 
 export function renderPrompt(prompt: Prompt, ctx: Context): string {
@@ -95,23 +57,23 @@ export function renderPrompt(prompt: Prompt, ctx: Context): string {
 
 /** The static chips in the control arm. */
 export const CONTROL_CHIPS: { id: string; text: string; kind: PromptKind }[] = [
-  { id: 'ctl-image', kind: 'make', text: 'Create image' },
-  { id: 'ctl-summarize', kind: 'write', text: 'Summarize text' },
-  { id: 'ctl-code', kind: 'learn', text: 'Code' },
-  { id: 'ctl-advice', kind: 'fun', text: 'Get advice' },
-  { id: 'ctl-more', kind: 'plan', text: 'More' },
+  { id: 'ctl-chart', kind: 'learn', text: 'Read my chart' },
+  { id: 'ctl-today', kind: 'local', text: "Today's energy" },
+  { id: 'ctl-week', kind: 'plan', text: 'This week' },
+  { id: 'ctl-decision', kind: 'fun', text: 'Help me decide' },
+  { id: 'ctl-memory', kind: 'write', text: 'Save a memory' },
 ];
 
 export type { Device };
 
 const LEDES: Record<string, string> = {
-  lateNight: 'Still up?',
-  earlyMorning: "What's first today?",
-  morning: 'Where should we start?',
-  midday: 'What are you in the middle of?',
-  afternoon: 'What can I take off your plate?',
-  evening: "What's tonight looking like?",
-  night: 'How do you want to end the day?',
+  lateNight: 'the sky is loud tonight',
+  earlyMorning: 'what are you carrying into today?',
+  morning: 'what is the sky saying to you?',
+  midday: 'where is your energy landing?',
+  afternoon: 'what wants your attention?',
+  evening: 'what is tonight asking for?',
+  night: 'what are you ready to let go of?',
 };
 
 export function ledeFor(ctx: Context): string {

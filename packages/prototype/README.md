@@ -1,7 +1,8 @@
-# First Prompt
+# Pinch astrology web prototype
 
-A prototype for the logged-out ChatGPT landing page. Two experiments in one
-runnable app, with an A/B switch so you can flip between them mid-demo.
+A chart-first, messaging-native Pinch prototype. It demonstrates moving from a question
+about today's energy to a personal chart conversation, with deterministic canned replies
+so the demo is repeatable and works without credentials.
 
 ```bash
 npm run dev -w pinch-prototype   # http://localhost:3006

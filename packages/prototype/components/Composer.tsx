@@ -40,7 +40,7 @@ export function Composer({
         </button>
         <textarea
           ref={ref}
-          aria-label="Message ChatGPT"
+          aria-label="Message Pinch"
           rows={1}
           value={value}
           autoFocus={autoFocus}
