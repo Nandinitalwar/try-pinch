@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   DEFAULT_GROQ_REPLY_MODEL,
+  DEFAULT_GLM_REPLY_MODEL,
   DEFAULT_OPENAI_REPLY_MODEL,
   getReplyProviderRequestOptions,
   GROQ_OPENAI_BASE_URL,
+  GLM_OPENAI_BASE_URL,
   resolveReplyProviderConfig,
 } from '../lib/replyProvider'
 
@@ -41,6 +43,14 @@ test('reply model and reasoning remain configurable on Groq', () => {
   assert.equal(config.reasoningEffort, 'medium')
 })
 
+test('GLM-5.2 uses its OpenAI-compatible endpoint', () => {
+  const config = resolveReplyProviderConfig({ PINCH_REPLY_PROVIDER: 'glm', GLM_API_KEY: 'glm-test-key' })
+  assert.equal(config.provider, 'glm')
+  assert.equal(config.model, DEFAULT_GLM_REPLY_MODEL)
+  assert.equal(config.reasoningEffort, 'low')
+  assert.equal(config.baseURL, GLM_OPENAI_BASE_URL)
+})
+
 test('provider-specific keys fail clearly instead of silently falling back', () => {
   assert.throws(
     () => resolveReplyProviderConfig({ PINCH_REPLY_PROVIDER: 'groq' }),
@@ -48,7 +58,7 @@ test('provider-specific keys fail clearly instead of silently falling back', () 
   )
   assert.throws(
     () => resolveReplyProviderConfig({ PINCH_REPLY_PROVIDER: 'grok', GROQ_API_KEY: 'x' }),
-    /must be "openai" or "groq"/
+    /must be "openai", "groq", or "glm"/
   )
 })
 

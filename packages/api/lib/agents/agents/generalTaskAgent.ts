@@ -168,6 +168,47 @@ const tools: OpenAI.Responses.FunctionTool[] = [
   },
 ]
 
+// GLM-5.2 exposes Chat Completions rather than OpenAI Responses. Keep the
+// agent's internal replay format Responses-shaped, and translate at the edge.
+function toGlmMessages(input: OpenAI.Responses.ResponseInput, instructions: string): any[] {
+  const messages: any[] = [{ role: 'system', content: instructions }]
+  for (const item of input as any[]) {
+    if (!item) continue
+    if (item.type === 'function_call') {
+      messages.push({
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: item.call_id,
+          type: 'function',
+          function: { name: item.name, arguments: item.arguments || '{}' },
+        }],
+      })
+    } else if (item.type === 'function_call_output') {
+      messages.push({ role: 'tool', tool_call_id: item.call_id, content: item.output || '' })
+    } else if (item.role) {
+      const content = typeof item.content === 'string'
+        ? item.content
+        : Array.isArray(item.content)
+          ? item.content.map((part: any) => typeof part === 'string' ? part : part?.text || '').join('')
+          : ''
+      if (content) messages.push({ role: item.role, content })
+    }
+  }
+  return messages
+}
+
+function toGlmTools(responseTools: OpenAI.Responses.FunctionTool[]): any[] {
+  return responseTools.map(tool => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    },
+  }))
+}
+
 export class GeneralTaskAgent extends ExecutionAgent {
   private openai: OpenAI
   private replyProvider: ReplyProvider
@@ -1033,9 +1074,48 @@ When recommending specific events (concerts, exhibits, etc.), 2-3 max, each form
           reasoningEffort?: 'low' | 'medium'
           maxOutputTokens?: number
         } = {}
-      ) => {
+      ): Promise<OpenAI.Responses.Response> => {
         const enableTools = options.enableTools ?? true
         const reasoningEffort = options.reasoningEffort ?? this.replyReasoningEffort
+
+        if (this.replyProvider === 'glm') {
+          const completion = await this.openai.chat.completions.create({
+            model: this.replyModel,
+            messages: toGlmMessages(input, systemPrompt),
+            tools: enableTools ? toGlmTools(tools) : undefined,
+            tool_choice: enableTools ? (options.toolChoice ?? 'auto') : 'none',
+            max_tokens: options.maxOutputTokens ?? 1600,
+            // GLM accepts this extension; cast keeps the OpenAI SDK types from
+            // rejecting provider-specific request fields.
+            thinking: { type: reasoningEffort === 'medium' ? 'enabled' : 'disabled' },
+          } as any)
+          const choice = completion.choices?.[0]
+          const toolCalls = choice?.message?.tool_calls || []
+          const output = toolCalls.map((call: any) => ({
+            type: 'function_call' as const,
+            call_id: call.id,
+            name: call.function?.name || '',
+            arguments: call.function?.arguments || '{}',
+          }))
+          if (completion.usage) {
+            usageTotals.inputTokens += completion.usage.prompt_tokens || 0
+            usageTotals.outputTokens += completion.usage.completion_tokens || 0
+            usageTotals.totalTokens += completion.usage.total_tokens || 0
+          }
+          return {
+            model: completion.model,
+            status: 'completed',
+            output_text: choice?.message?.content || '',
+            output,
+            usage: {
+              input_tokens: completion.usage?.prompt_tokens || 0,
+              output_tokens: completion.usage?.completion_tokens || 0,
+              total_tokens: completion.usage?.total_tokens || 0,
+              output_tokens_details: { reasoning_tokens: 0 },
+            },
+          } as unknown as OpenAI.Responses.Response
+        }
+
         const request: OpenAI.Responses.ResponseCreateParamsNonStreaming = {
           model: this.replyModel,
           instructions: systemPrompt,
