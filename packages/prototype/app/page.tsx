@@ -376,7 +376,7 @@ export default function Page() {
                     <div className="signup-nudge">
                       <p>Keep this chat and everything after it.</p>
                       <button className="btn-primary" onClick={onSignup}>
-                        Keep my chart
+                        Text Pinch
                       </button>
                     </div>
                   )}

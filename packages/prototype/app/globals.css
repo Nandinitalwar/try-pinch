@@ -217,6 +217,24 @@ button {
   margin-left: 2px;
   letter-spacing: 0.01em;
 }
+.context-kicker { color: var(--text-faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.context-title { color: var(--text); font-size: 16px; letter-spacing: -.02em; margin: 16px 10px 2px; }
+.context-subtitle { color: var(--text-faint); font-size: 11px; line-height: 1.4; margin: 0 10px; }
+.context-graph { margin: 10px 0 0; width: 100%; }
+.context-graph svg { width: 100%; height: auto; display: block; overflow: visible; }
+.graph-lines path { fill: none; stroke: rgba(217, 179, 108, .28); stroke-width: 1; stroke-dasharray: 3 4; }
+.graph-node circle { stroke-width: 1; }
+.graph-node text { fill: var(--text); font-size: 8px; text-anchor: middle; dominant-baseline: middle; font-family: inherit; }
+.graph-node-core circle { fill: #d9b36c; stroke: #f5dca8; }
+.graph-node-core text { fill: #1a1510; font-size: 10px; font-weight: 600; }
+.graph-node-chart circle { fill: rgba(151, 127, 209, .28); stroke: #a895e2; }
+.graph-node-people circle { fill: rgba(224, 132, 156, .22); stroke: #df849c; }
+.graph-node-places circle { fill: rgba(112, 178, 168, .2); stroke: #70b2a8; }
+.graph-node-plans circle { fill: rgba(102, 151, 220, .22); stroke: #6697dc; }
+.graph-node-patterns circle { fill: rgba(217, 179, 108, .2); stroke: #d9b36c; }
+.context-facts { border-top: 1px solid var(--border); margin: 0 10px; padding-top: 10px; color: var(--text-faint); font-size: 10px; line-height: 2; }
+.fact-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 7px; }
+.fact-dot-sky { background: #a895e2; }.fact-dot-people { background: #df849c; }.fact-dot-plans { background: #6697dc; }
 .topbar-right {
   display: flex;
   align-items: center;

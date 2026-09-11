@@ -4,6 +4,11 @@ A chart-first, messaging-native Pinch prototype. It demonstrates moving from a q
 about today's energy to a personal chart conversation, with deterministic canned replies
 so the demo is repeatable and works without credentials.
 
+The left rail is a context graph rather than a chat-history sidebar: **you** sits at the
+center, connected to the **sky**, **people**, **places**, **plans**, and **patterns** Pinch
+can hold onto. It is intentionally a visual explanation of memory, not a “keep my chart”
+signup funnel.
+
 ```bash
 npm run dev -w pinch-prototype   # http://localhost:3006
 npm run check -w pinch-prototype # context-engine smoke check
