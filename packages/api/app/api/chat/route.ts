@@ -8,6 +8,7 @@ import { scheduleFromMessage } from '@/lib/followups'
 import { getChartDeliveryReason } from '@/lib/chartDelivery'
 import { composeMultimodalInput } from '@/lib/mediaIngest'
 import { getConversationFastPath } from '@/lib/conversationFastPath'
+import { sanitizeFinalReply } from '@/lib/textSanitizer'
 
 /**
  * Web chat API endpoint for testing Pinch.
@@ -109,6 +110,9 @@ export async function POST(request: NextRequest) {
       console.error('[WebChat] Agent error:', error)
       aiResponse = 'I am having trouble right now. Please try again in a moment.'
     }
+
+    // Hard safety net: strip em/en dashes and lookalikes from the final reply
+    aiResponse = sanitizeFinalReply(aiResponse)
 
     // Save AI response
     await ChatStorage.saveMessage(userId, 'assistant', aiResponse, undefined, { identifierIsUserId: true })

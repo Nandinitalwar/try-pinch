@@ -9,6 +9,7 @@ import {
   checkVoice,
   matchCasing,
 } from '../lib/voiceCheck'
+import { sanitizeDashCharacters } from '../lib/textSanitizer'
 
 test('activation guard requires the exact missing onboarding inputs', () => {
   assert.deepEqual(
@@ -141,4 +142,16 @@ test('lowercase users get deterministic lowercase sentence openings', () => {
   assert.equal(matchCasing("Don't text him. I mean it.", 'should i text him'), "don't text him. i mean it.")
   assert.equal(matchCasing('lol no, I just said no.', 'should i text him'), 'lol no, i just said no.')
   assert.equal(matchCasing('YES! Keep New York.', 'do i go'), 'YES! keep New York.')
+})
+
+test('sanitizer removes em/en dashes from final replies', () => {
+  const withEm = 'Your energy is scattered — stay home tonight.'
+  const withEn = 'Pick one thing – and do only that.'
+  assert.equal(sanitizeDashCharacters(withEm), 'Your energy is scattered, stay home tonight.')
+  assert.equal(sanitizeDashCharacters(withEn), 'Pick one thing, and do only that.')
+})
+
+test('sanitizer converts numeric ranges to natural language', () => {
+  const range = 'The sweet spot is 2014–2016 for this pattern.'
+  assert.equal(sanitizeDashCharacters(range), 'The sweet spot is 2014 to 2016 for this pattern.')
 })

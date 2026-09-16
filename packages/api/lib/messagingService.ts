@@ -2,6 +2,7 @@
 // Handles Twilio SMS plus Pinch's sole iMessage provider, Linq.
 
 import { LinqClient } from './linq'
+import { sanitizeFinalReply } from './textSanitizer'
 
 export interface MessageParams {
   to: string
@@ -22,6 +23,7 @@ export class MessagingService {
 
   async sendMessage(params: MessageParams): Promise<MessageResult> {
     const { to, content, mediaUrl, preferIMessage = true } = params
+    const cleaned = sanitizeFinalReply(content || '')
 
     if (preferIMessage) {
       if (!this.linqClient) {
@@ -31,7 +33,7 @@ export class MessagingService {
           error: 'Linq credentials are not configured',
         }
       }
-      const result = await this.linqClient.sendMessage({ to, content, mediaUrl })
+      const result = await this.linqClient.sendMessage({ to, content: cleaned, mediaUrl })
       if (result.status === 'OK') {
         return { success: true, service: 'linq', messageId: result.message_id }
       }

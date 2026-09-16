@@ -9,6 +9,7 @@ import { startConversationSpan, flushBraintrust } from '@/lib/braintrust'
 import { Vault } from '@/lib/vault'
 import { composeMultimodalInput, ProcessedMediaResult } from '@/lib/mediaIngest'
 import { getConversationFastPath } from '@/lib/conversationFastPath'
+import { sanitizeFinalReply } from '@/lib/textSanitizer'
 
 const WHATSAPP_CHAR_LIMIT = 950  // WhatsApp limit is 1024, leave buffer for XML escaping
 
@@ -234,6 +235,9 @@ export async function POST(request: NextRequest) {
       }
       aiResponse = 'I am having trouble right now. Please try again in a moment.'
     }
+
+    // Hard safety net: strip em/en dashes and lookalikes from the final reply
+    aiResponse = sanitizeFinalReply(aiResponse)
 
     // End conversation span with metrics
     if (conversationSpan) {

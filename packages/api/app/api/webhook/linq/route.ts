@@ -12,6 +12,7 @@ import { composeMultimodalInput, ProcessedMediaResult } from '@/lib/mediaIngest'
 import { scheduleFromMessage } from '@/lib/followups'
 import { createChartDeliveryUrl, getChartDeliveryReason } from '@/lib/chartDelivery'
 import { getConversationFastPath } from '@/lib/conversationFastPath'
+import { sanitizeFinalReply } from '@/lib/textSanitizer'
 
 // Normalize phone number to E.164 format
 function normalizePhone(phone: string | null): string {
@@ -330,6 +331,9 @@ async function processInboundMessage(
       }
       aiResponse = 'I am having trouble right now. Please try again in a moment.'
     }
+
+    // Hard safety net: strip em/en dashes and lookalikes from the final reply
+    aiResponse = sanitizeFinalReply(aiResponse)
 
     // End conversation span
     console.log('[Linq] 📊 Logging to Braintrust...')
