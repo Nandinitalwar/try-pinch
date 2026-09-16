@@ -269,6 +269,22 @@ models produce them constantly. Also blocked: "it's not X, it's Y", "here's the 
 
 ---
 
+### Hard-strip em/en dashes at send-time across all channels
+**2026-09-16**
+
+User reviews of the production-path quality harness showed that em/en dashes still slipped
+through when a targeted rewrite failed or was skipped. An unconditional last-mile sanitizer
+now removes em/en dashes and common Unicode lookalikes in the final user-facing reply for
+every channel (iMessage via Linq, SMS/WhatsApp via Twilio, and web chat). Numeric ranges
+like "2014–2016" become "2014 to 2016"; other dash punctuation becomes a comma + space.
+The deterministic voice check remains earlier in the pipeline to guide rewrites, but the
+strip runs last as a safety net so no reply can ship a forbidden dash.
+
+Revisit when: measured replies no longer need this guardrail (unlikely) or if a specific
+dash-like glyph must be preserved for a new feature with a verified delivery rule.
+
+---
+
 ### Transits computed, never searched
 **2026-07-27**
 
